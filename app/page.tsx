@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChangeEvent, CSSProperties, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, CSSProperties, FormEvent, MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabase, isCloudSyncConfigured } from "../lib/supabase";
 
@@ -192,7 +191,7 @@ function sleepInHours(entry: Entry) {
 }
 
 function pageFromPath(pathname: string): PageView {
-  const segment = pathname.split("/").filter(Boolean)[0];
+  const segment = pathname.split("/").filter(Boolean).find((part) => part === "timeline" || part === "visuals" || part === "meals" || part === "spending" || part === "profile" || part === "settings");
   if (segment === "timeline" || segment === "visuals" || segment === "meals" || segment === "spending" || segment === "profile" || segment === "settings") return segment;
   return "today";
 }
@@ -359,7 +358,7 @@ function AuthScreen({ mode, email, password, message, busy, onMode, onEmail, onP
 
 export default function Home() {
   const pathname = usePathname();
-  const activePage = pageFromPath(pathname);
+  const [activePage, setActivePage] = useState<PageView>(() => pageFromPath(pathname));
   const [entries, setEntries] = useState<Entry[]>(starterEntries);
   const [localReady, setLocalReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
@@ -391,6 +390,13 @@ export default function Home() {
   const [macroForm, setMacroForm] = useState<MacroForm>({ calories: "", protein: "", carbs: "", fat: "" });
   const [expenseForm, setExpenseForm] = useState<ExpenseForm>({ amount: "", merchant: "", spendCategory: "Other" });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const syncPageFromAddress = () => setActivePage(pageFromPath(window.location.pathname));
+    syncPageFromAddress();
+    window.addEventListener("popstate", syncPageFromAddress);
+    return () => window.removeEventListener("popstate", syncPageFromAddress);
+  }, []);
 
   useEffect(() => {
     const hydrateTimer = window.setTimeout(() => {
@@ -811,6 +817,17 @@ export default function Home() {
 
   function openOverlay(next: Exclude<Overlay, null>) { setOverlay(next); if (next !== "search") setQuery(""); }
 
+  function navigatePage(event: ReactMouseEvent<HTMLAnchorElement>, page: PageView) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    setOverlay(null);
+    setActivePage(page);
+    const href = page === "today" ? "./" : `./${page}`;
+    const nextUrl = new URL(href, window.location.href);
+    window.history.pushState({ memoryDockPage: page }, "", nextUrl.pathname);
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }
+
   if (isCloudSyncConfigured && (!authReady || (session && !cloudHydrated))) {
     return <main className="auth-shell"><section className="auth-card auth-loading"><DockMark /><h1>Opening your MemoryDock…</h1><p>Loading your private account and saved data.</p></section></main>;
   }
@@ -821,24 +838,24 @@ export default function Home() {
 
   return <main className={`app-shell ${theme === "night" ? "night" : ""} ${activePage !== "today" ? "page-mode" : ""}`}>
     <aside className="sidebar">
-      <Link className="brand" href="/" aria-label="MemoryDock home"><DockMark /><span>MemoryDock</span></Link>
+      <a className="brand" href="./" onClick={(event) => navigatePage(event, "today")} aria-label="MemoryDock home"><DockMark /><span>MemoryDock</span></a>
       <nav className="side-nav" aria-label="Main navigation">
-        <Link className={`nav-item ${activePage === "today" ? "active" : ""}`} href="/"><Glyph name="home" /><span>Today</span></Link>
-        <Link className={`nav-item ${activePage === "timeline" ? "active" : ""}`} href="/timeline"><Glyph name="timeline" /><span>Timeline</span></Link>
-        <Link className={`nav-item ${activePage === "visuals" ? "active" : ""}`} href="/visuals"><Glyph name="chart" /><span>Visuals</span></Link>
-        <Link className={`nav-item ${activePage === "meals" ? "active" : ""}`} href="/meals"><Glyph name="fork" /><span>Meals</span></Link>
-        <Link className={`nav-item ${activePage === "spending" ? "active" : ""}`} href="/spending"><Glyph name="wallet" /><span>Spending</span></Link>
+        <a className={`nav-item ${activePage === "today" ? "active" : ""}`} href="./" onClick={(event) => navigatePage(event, "today")}><Glyph name="home" /><span>Today</span></a>
+        <a className={`nav-item ${activePage === "timeline" ? "active" : ""}`} href="./timeline" onClick={(event) => navigatePage(event, "timeline")}><Glyph name="timeline" /><span>Timeline</span></a>
+        <a className={`nav-item ${activePage === "visuals" ? "active" : ""}`} href="./visuals" onClick={(event) => navigatePage(event, "visuals")}><Glyph name="chart" /><span>Visuals</span></a>
+        <a className={`nav-item ${activePage === "meals" ? "active" : ""}`} href="./meals" onClick={(event) => navigatePage(event, "meals")}><Glyph name="fork" /><span>Meals</span></a>
+        <a className={`nav-item ${activePage === "spending" ? "active" : ""}`} href="./spending" onClick={(event) => navigatePage(event, "spending")}><Glyph name="wallet" /><span>Spending</span></a>
       </nav>
       <div className="sidebar-foot">
-        <Link className={`nav-item ${activePage === "settings" ? "active" : ""}`} href="/settings"><Glyph name="settings" /><span>Settings</span></Link>
-        <Link className={`profile-chip ${activePage === "profile" ? "active" : ""}`} href="/profile"><ProfileAvatar name={profile?.name || displayName} avatarDataUrl={profile?.avatarDataUrl} avatarColor={profile?.avatarColor || avatarColors[0]} /><span><strong>{profile?.name || "Create profile"}</strong><small>{profile?.focusAreas.length ? profile.focusAreas.slice(0, 2).join(" · ") : "Personalize your dock"}</small></span><Glyph name="chevron" size={15} /></Link>
+        <a className={`nav-item ${activePage === "settings" ? "active" : ""}`} href="./settings" onClick={(event) => navigatePage(event, "settings")}><Glyph name="settings" /><span>Settings</span></a>
+        <a className={`profile-chip ${activePage === "profile" ? "active" : ""}`} href="./profile" onClick={(event) => navigatePage(event, "profile")}><ProfileAvatar name={profile?.name || displayName} avatarDataUrl={profile?.avatarDataUrl} avatarColor={profile?.avatarColor || avatarColors[0]} /><span><strong>{profile?.name || "Create profile"}</strong><small>{profile?.focusAreas.length ? profile.focusAreas.slice(0, 2).join(" · ") : "Personalize your dock"}</small></span><Glyph name="chevron" size={15} /></a>
       </div>
     </aside>
 
     <section className="main-panel home-panel" id="top">
       <header className="topbar">
         <div><p className="eyebrow">{dateLabel}</p><h1>{greeting}, {displayName}.</h1></div>
-        <div className="header-actions">{session && <span className={`sync-pill ${syncState}`}><i />{syncState === "loading" ? "Syncing" : syncState === "error" ? "Sync issue" : "Synced"}</span>}<button className="icon-button" onClick={() => openOverlay("search")} aria-label="Search"><Glyph name="search" /></button><button className="icon-button" onClick={toggleTheme} aria-label="Change appearance"><Glyph name="sun" /></button><Link className="mobile-mark" href="/settings" aria-label="Open settings"><DockMark compact /></Link></div>
+        <div className="header-actions">{session && <span className={`sync-pill ${syncState}`}><i />{syncState === "loading" ? "Syncing" : syncState === "error" ? "Sync issue" : "Synced"}</span>}<button className="icon-button" onClick={() => openOverlay("search")} aria-label="Search"><Glyph name="search" /></button><button className="icon-button" onClick={toggleTheme} aria-label="Change appearance"><Glyph name="sun" /></button><a className="mobile-mark" href="./settings" onClick={(event) => navigatePage(event, "settings")} aria-label="Open settings"><DockMark compact /></a></div>
       </header>
 
       <section className="capture-card" id="today">
@@ -881,23 +898,23 @@ export default function Home() {
         <div className="mood-row"><span className="mood-face"><Glyph name="smile" /></span><span><small>Latest mood</small><strong>{stats.latestMood}</strong></span></div>
       </section>
       <section className="rail-card macro-rail-card">
-        <div className="rail-title"><span><Glyph name="fork" size={17} /></span><h2>Today’s macros</h2><Link href="/meals">View</Link></div>
+        <div className="rail-title"><span><Glyph name="fork" size={17} /></span><h2>Today’s macros</h2><a href="./meals" onClick={(event) => navigatePage(event, "meals")}>View</a></div>
         <div className="calorie-summary"><strong>{Math.round(stats.macros.calories)}</strong><span>of {macroGoals.calories} calories</span><i><b style={{ width: `${Math.min(100, (stats.macros.calories / macroGoals.calories) * 100)}%` }} /></i></div>
         <div className="mini-macros"><span><b>{Math.round(stats.macros.protein)}g</b>Protein</span><span><b>{Math.round(stats.macros.carbs)}g</b>Carbs</span><span><b>{Math.round(stats.macros.fat)}g</b>Fat</span></div>
       </section>
       <section className="rail-card spend-rail-card">
-        <div className="rail-title"><span><Glyph name="wallet" size={17} /></span><h2>Spending</h2><Link href="/spending">View</Link></div>
+        <div className="rail-title"><span><Glyph name="wallet" size={17} /></span><h2>Spending</h2><a href="./spending" onClick={(event) => navigatePage(event, "spending")}>View</a></div>
         <div className="spend-rail-total"><small>This month</small><strong>${stats.monthExpense.toFixed(2)}</strong><span>{stats.expenses.length} {stats.expenses.length === 1 ? "transaction" : "transactions"}</span></div>
-        {spendBudget > 0 ? <div className="budget-mini"><i><b style={{ width: `${Math.min(100, (stats.monthExpense / spendBudget) * 100)}%` }} /></i><span>${Math.max(0, spendBudget - stats.monthExpense).toFixed(2)} left of ${spendBudget.toFixed(0)}</span></div> : <Link className="set-budget-link" href="/spending">Set a monthly budget</Link>}
+        {spendBudget > 0 ? <div className="budget-mini"><i><b style={{ width: `${Math.min(100, (stats.monthExpense / spendBudget) * 100)}%` }} /></i><span>${Math.max(0, spendBudget - stats.monthExpense).toFixed(2)} left of ${spendBudget.toFixed(0)}</span></div> : <a className="set-budget-link" href="./spending" onClick={(event) => navigatePage(event, "spending")}>Set a monthly budget</a>}
         {stats.spendByMerchant[0] && <div className="top-merchant"><span>{stats.spendByMerchant[0].merchant[0]?.toUpperCase() || "$"}</span><div><small>Top place</small><strong>{stats.spendByMerchant[0].merchant}</strong></div><b>${stats.spendByMerchant[0].amount.toFixed(2)}</b></div>}
       </section>
-      <Link className="review-link" href="/visuals"><span>View your month</span><Glyph name="chevron" size={18} /></Link>
+      <a className="review-link" href="./visuals" onClick={(event) => navigatePage(event, "visuals")}><span>View your month</span><Glyph name="chevron" size={18} /></a>
     </aside>
 
     <nav className="mobile-nav" aria-label="Mobile navigation">
-      <Link className={activePage === "today" ? "active" : ""} href="/"><Glyph name="home" /><span>Today</span></Link><Link className={activePage === "meals" ? "active" : ""} href="/meals"><Glyph name="fork" /><span>Meals</span></Link>
-      <Link className={`mobile-visual ${activePage === "visuals" ? "active" : ""}`} href="/visuals" aria-label="Open visual dashboard"><Glyph name="chart" size={22} /><span>Visuals</span></Link>
-      <Link className={activePage === "spending" ? "active" : ""} href="/spending"><Glyph name="wallet" /><span>Spending</span></Link><Link className={activePage === "profile" ? "active" : ""} href="/profile"><Glyph name="user" /><span>Profile</span></Link>
+      <a className={activePage === "today" ? "active" : ""} href="./" onClick={(event) => navigatePage(event, "today")}><Glyph name="home" /><span>Today</span></a><a className={activePage === "meals" ? "active" : ""} href="./meals" onClick={(event) => navigatePage(event, "meals")}><Glyph name="fork" /><span>Meals</span></a>
+      <a className={`mobile-visual ${activePage === "visuals" ? "active" : ""}`} href="./visuals" onClick={(event) => navigatePage(event, "visuals")} aria-label="Open visual dashboard"><Glyph name="chart" size={22} /><span>Visuals</span></a>
+      <a className={activePage === "spending" ? "active" : ""} href="./spending" onClick={(event) => navigatePage(event, "spending")}><Glyph name="wallet" /><span>Spending</span></a><a className={activePage === "profile" ? "active" : ""} href="./profile" onClick={(event) => navigatePage(event, "profile")}><Glyph name="user" /><span>Profile</span></a>
     </nav>
 
     {panel && <div className={isPagePanel ? "page-layer" : "overlay-layer"} role={isPagePanel ? undefined : "presentation"} onMouseDown={(event) => { if (!isPagePanel && event.target === event.currentTarget) setOverlay(null); }}>
@@ -971,7 +988,7 @@ export default function Home() {
 
           {visualSection === "spending" && <div className="visual-panel">
             <div className="visual-stat-grid three"><article className="accent-orange"><small>Total spent</small><strong>${visualData.spendTotal.toFixed(0)}</strong><span>{visualData.expenses.length} transactions</span></article><article className="accent-green"><small>Spending days</small><strong>{visualData.daily.filter((day) => day.spending > 0).length}</strong><span>this month</span></article><article className="accent-blue"><small>Top category</small><strong>{visualData.spendByCategory[0]?.category || "—"}</strong><span>{visualData.spendByCategory[0] ? `$${visualData.spendByCategory[0].amount.toFixed(2)}` : "No spending yet"}</span></article></div>
-            <section className="visual-card"><div className="visual-card-head"><div><small>Day by day</small><h3>Daily spending</h3></div><Link href="/spending">Open tracker</Link></div><div className="daily-chart-scroll"><div className="daily-bars spending-bars">{visualData.daily.map((day) => <span key={day.day} title={`$${day.spending.toFixed(2)} on day ${day.day}`}><i><b style={{ height: `${day.spending ? Math.max(7, (day.spending / visualData.maxDailySpend) * 100) : 2}%` }} /></i><small>{day.day === 1 || day.day % 5 === 0 ? day.day : ""}</small></span>)}</div></div></section>
+            <section className="visual-card"><div className="visual-card-head"><div><small>Day by day</small><h3>Daily spending</h3></div><a href="./spending" onClick={(event) => navigatePage(event, "spending")}>Open tracker</a></div><div className="daily-chart-scroll"><div className="daily-bars spending-bars">{visualData.daily.map((day) => <span key={day.day} title={`$${day.spending.toFixed(2)} on day ${day.day}`}><i><b style={{ height: `${day.spending ? Math.max(7, (day.spending / visualData.maxDailySpend) * 100) : 2}%` }} /></i><small>{day.day === 1 || day.day % 5 === 0 ? day.day : ""}</small></span>)}</div></div></section>
             <section className="visual-card"><div className="visual-card-head"><div><small>Where it went</small><h3>Spending categories</h3></div><span>${visualData.spendTotal.toFixed(2)}</span></div>{visualData.spendByCategory.length ? <div className="macro-mix spend-mix">{visualData.spendByCategory.map((item) => <div key={item.category}><span>{item.category}</span><i><b style={{ width: `${(item.amount / (visualData.spendByCategory[0]?.amount || 1)) * 100}%` }} /></i><strong>${item.amount.toFixed(0)}</strong></div>)}</div> : <div className="visual-empty">Spending will be sorted into categories as you log it.</div>}</section>
           </div>}
 
@@ -1033,12 +1050,12 @@ export default function Home() {
           <fieldset className="profile-fieldset"><legend>What do you want to notice?</legend><p>Pick any focus areas. You can change these later.</p><div className="focus-chips">{focusAreas.map((area) => { const selected = profileDraft.focusAreas.includes(area); return <button type="button" aria-pressed={selected} className={selected ? "selected" : ""} key={area} onClick={() => setProfileDraft({ ...profileDraft, focusAreas: selected ? profileDraft.focusAreas.filter((item) => item !== area) : [...profileDraft.focusAreas, area] })}>{area}</button>; })}</div></fieldset>
           {profileError && <p className="profile-error" role="alert">{profileError}</p>}
           <div className="profile-privacy"><Glyph name="spark" size={17} /><p><strong>{session ? "Private to your account" : "Private on this device"}</strong>{session ? "Your profile and logs securely sync whenever you sign in." : "Your profile and photo stay in this browser with your logs."}</p></div>
-          <div className="profile-actions"><Link href={profile ? "/settings" : "/"}>{profile ? "Cancel" : "Not now"}</Link><button type="submit">{profile ? "Save changes" : "Create profile"}</button></div>
+          <div className="profile-actions"><a href={profile ? "./settings" : "./"} onClick={(event) => navigatePage(event, profile ? "settings" : "today")}>{profile ? "Cancel" : "Not now"}</a><button type="submit">{profile ? "Save changes" : "Create profile"}</button></div>
           {profile && <button className="delete-profile" type="button" onClick={deleteProfile}>Delete profile</button>}
         </form>}
 
         {panel === "settings" && <div className="settings-view">
-          <Link className="setting-row profile-setting" href="/profile"><span><strong>{profile ? "Profile" : "Create your profile"}</strong><small>{profile ? `${profile.name} · ${profile.focusAreas.length ? profile.focusAreas.join(", ") : "Add focus areas"}` : "Add your name, photo, color, and focus areas"}</small></span><ProfileAvatar name={profile?.name || displayName} avatarDataUrl={profile?.avatarDataUrl} avatarColor={profile?.avatarColor || avatarColors[0]} /></Link>
+          <a className="setting-row profile-setting" href="./profile" onClick={(event) => navigatePage(event, "profile")}><span><strong>{profile ? "Profile" : "Create your profile"}</strong><small>{profile ? `${profile.name} · ${profile.focusAreas.length ? profile.focusAreas.join(", ") : "Add focus areas"}` : "Add your name, photo, color, and focus areas"}</small></span><ProfileAvatar name={profile?.name || displayName} avatarDataUrl={profile?.avatarDataUrl} avatarColor={profile?.avatarColor || avatarColors[0]} /></a>
           {session && <div className="setting-row account-setting"><span><strong>Account</strong><small>{session.user.email} · Your data is synced</small></span><button type="button" onClick={signOut}>Sign out</button></div>}
           <button className="setting-row" onClick={toggleTheme}><span><strong>Appearance</strong><small>Switch between light and evening mode</small></span><em>{theme === "day" ? "Light" : "Evening"}</em></button>
           <button className="setting-row" onClick={exportLogs}><span><strong>Export your logs</strong><small>Download a private copy as a data file</small></span><Glyph name="chevron" size={18} /></button>
