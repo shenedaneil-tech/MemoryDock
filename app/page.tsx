@@ -5,7 +5,9 @@ import { ChangeEvent, CSSProperties, FormEvent, MouseEvent as ReactMouseEvent, u
 import type { Session } from "@supabase/supabase-js";
 import { getSupabase, isCloudSyncConfigured } from "../lib/supabase";
 
-type Category = "Expense" | "Sleep" | "Movement" | "Mood" | "Meal" | "Social" | "Idea" | "Habit" | "Metric" | "Note";
+const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";
+
+type Category = "Expense" | "Sleep" | "Movement" | "Mood" | "Meal" | "Social" | "Idea" | "Habit" | "Metric" | "Reminder" | "Note";
 type SpendCategory = "Groceries" | "Dining" | "Transportation" | "Shopping" | "Bills" | "Health" | "Entertainment" | "Giving" | "Other";
 type Macros = { calories: number; protein: number; carbs: number; fat: number; source: "estimated" | "manual"; items?: string[] };
 type ExpenseInfo = { amount: number; merchant: string; spendCategory: SpendCategory };
@@ -21,6 +23,8 @@ type ProfileDraft = Omit<Profile, "createdAt">;
 type VisualSection = "overview" | "mood" | "movement" | "nutrition" | "spending" | "sleep";
 type AuthMode = "sign-in" | "create";
 type SyncState = "local" | "loading" | "saved" | "error";
+type NotificationState = "unsupported" | "off" | "blocked" | "enabling" | "on";
+type Reminder = { id: string; text: string; remindAt: number; status: "pending" | "sent" | "cancelled"; createdAt: number };
 
 type EntryRow = {
   id: string;
@@ -43,6 +47,14 @@ type ProfileRow = {
   created_at: string;
 };
 
+type ReminderRow = {
+  id: string;
+  text: string;
+  remind_at: string;
+  status: "pending" | "sent" | "cancelled";
+  created_at: string;
+};
+
 const starterEntries: Entry[] = [
   { id: "sample-mood", text: "Feeling calm and focused this morning", category: "Mood", value: "Calm", time: "8:42 AM", timestamp: 4 },
   { id: "sample-walk", text: "Took a 30 minute morning walk", category: "Movement", value: "30 min", time: "7:35 AM", timestamp: 3 },
@@ -56,6 +68,7 @@ const categoryMeta: Record<Category, { icon: string; color: string }> = {
   Meal: { icon: "fork", color: "blue" }, Social: { icon: "people", color: "blue" },
   Idea: { icon: "bulb", color: "ochre" }, Habit: { icon: "repeat", color: "green" },
   Metric: { icon: "metric", color: "violet" }, Note: { icon: "note", color: "slate" },
+  Reminder: { icon: "bell", color: "coral" },
 };
 
 const foodDatabase: FoodDefinition[] = [
@@ -142,6 +155,7 @@ function Glyph({ name, size = 20 }: { name: string; size?: number }) {
     case "user": return <svg {...common}><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>;
     case "pencil": return <svg {...common}><path d="m4 20 4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20ZM14 7l3 3"/></svg>;
     case "trash": return <svg {...common}><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6"/></svg>;
+    case "bell": return <svg {...common}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>;
     default: return null;
   }
 }
@@ -273,11 +287,64 @@ function enrichEntry(entry: Entry, position = 0): Entry {
   return { ...entry, timestamp: entry.timestamp < 1_000_000_000_000 ? Date.now() - (position * 60_000) : entry.timestamp, value: entry.value ?? (expense ? `$${expense.amount.toFixed(2)}` : undefined), expense, macros };
 }
 
+function hasReminderIntent(text: string) {
+  return /\b(remind me|set (?:a )?reminder|reminder (?:for|to)|don['’]t let me forget|notify me)\b/i.test(text);
+}
+
+function parseReminder(text: string, now = new Date()): { remindAt: number; label: string } | null {
+  if (!hasReminderIntent(text)) return null;
+  const lower = text.toLowerCase();
+  const relative = lower.match(/\bin\s+(\d+)\s*(minutes?|mins?|hours?|hrs?|days?)\b/);
+  let target: Date;
+
+  if (relative) {
+    const amount = Number(relative[1]);
+    const unit = relative[2];
+    const milliseconds = unit.startsWith("day") ? amount * 86_400_000 : unit.startsWith("hour") || unit.startsWith("hr") ? amount * 3_600_000 : amount * 60_000;
+    target = new Date(now.getTime() + milliseconds);
+  } else {
+    target = new Date(now);
+    const weekdayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    const weekday = weekdayNames.findIndex((day) => new RegExp(`\\b${day.slice(0, 3)}(?:${day.slice(3)})?\\b`).test(lower));
+    if (/\btomorrow\b/.test(lower)) target.setDate(target.getDate() + 1);
+    else if (weekday >= 0) {
+      let daysAhead = (weekday - target.getDay() + 7) % 7;
+      if (daysAhead === 0) daysAhead = 7;
+      target.setDate(target.getDate() + daysAhead);
+    } else {
+      const dateMatch = lower.match(/\b(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?\b/);
+      if (dateMatch) {
+        const year = dateMatch[3] ? Number(dateMatch[3].length === 2 ? `20${dateMatch[3]}` : dateMatch[3]) : target.getFullYear();
+        target = new Date(year, Number(dateMatch[1]) - 1, Number(dateMatch[2]), target.getHours(), target.getMinutes());
+      } else if (!/\btoday\b/.test(lower)) return null;
+    }
+
+    const clock = lower.match(/(?:\bat\s+|@\s*)(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?\b/);
+    if (!clock) return null;
+    let hour = Number(clock[1]);
+    const minute = Number(clock[2] || 0);
+    const meridiem = clock[3]?.replace(/\./g, "");
+    if (meridiem === "pm" && hour < 12) hour += 12;
+    if (meridiem === "am" && hour === 12) hour = 0;
+    if (!meridiem && hour < 8) hour += 12;
+    target.setHours(hour, minute, 0, 0);
+    if (/\btoday\b/.test(lower) && target.getTime() <= now.getTime()) return null;
+  }
+
+  if (target.getTime() <= now.getTime()) return null;
+  return {
+    remindAt: target.getTime(),
+    label: new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(target),
+  };
+}
+
 function classifyEntry(text: string): Pick<Entry, "category" | "value" | "macros" | "expense"> {
   const lower = text.toLowerCase();
+  const reminder = parseReminder(text);
   const expense = extractExpense(text);
   const macros = estimateMacros(text) ?? (expense?.spendCategory === "Dining" ? { calories: 0, protein: 0, carbs: 0, fat: 0, source: "estimated" as const, items: [] } : undefined);
   const duration = text.match(/(\d+(?:\.\d+)?)\s*(hours?|hrs?|minutes?|mins?|km|k|miles?)/i);
+  if (reminder) return { category: "Reminder", value: reminder.label };
   if (expense) return { category: "Expense", value: `$${expense.amount.toFixed(2)}`, expense, macros };
   if (/sleep|slept|nap|woke|bed/.test(lower)) return { category: "Sleep", value: duration ? duration[0] : undefined };
   if (/walk|ran|run|workout|gym|yoga|exercise|steps|mile|5k/.test(lower)) return { category: "Movement", value: duration ? duration[0] : undefined };
@@ -321,6 +388,17 @@ function rowToEntry(row: EntryRow): Entry {
     macros: row.macros || undefined,
     expense: row.expense || undefined,
   };
+}
+
+function rowToReminder(row: ReminderRow): Reminder {
+  return { id: row.id, text: row.text, remindAt: new Date(row.remind_at).getTime(), status: row.status, createdAt: new Date(row.created_at).getTime() };
+}
+
+function urlBase64ToUint8Array(value: string) {
+  const padding = "=".repeat((4 - value.length % 4) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(base64);
+  return Uint8Array.from([...raw].map((character) => character.charCodeAt(0)));
 }
 
 function AuthScreen({ mode, email, password, message, busy, onMode, onEmail, onPassword, onSubmit }: {
@@ -372,7 +450,9 @@ export default function Home() {
   const [cloudHydrated, setCloudHydrated] = useState(!isCloudSyncConfigured);
   const [draft, setDraft] = useState("");
   const [isListening, setIsListening] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [savedMessage, setSavedMessage] = useState("");
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [notificationState, setNotificationState] = useState<NotificationState>("off");
   const [dateLabel, setDateLabel] = useState("Today");
   const [greeting, setGreeting] = useState("Hello");
   const [overlay, setOverlay] = useState<Overlay>(null);
@@ -396,6 +476,15 @@ export default function Home() {
     syncPageFromAddress();
     window.addEventListener("popstate", syncPageFromAddress);
     return () => window.removeEventListener("popstate", syncPageFromAddress);
+  }, []);
+
+  useEffect(() => {
+    const capabilityTimer = window.setTimeout(() => {
+      const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+      if (!supported || !vapidPublicKey) { setNotificationState("unsupported"); return; }
+      setNotificationState(Notification.permission === "granted" ? "on" : Notification.permission === "denied" ? "blocked" : "off");
+    }, 0);
+    return () => window.clearTimeout(capabilityTimer);
   }, []);
 
   useEffect(() => {
@@ -459,12 +548,13 @@ export default function Home() {
 
     async function hydrateCloud() {
       setSyncState("loading");
-      const [{ data: remoteEntries, error: entriesError }, { data: remoteProfile, error: profileLoadError }] = await Promise.all([
+      const [{ data: remoteEntries, error: entriesError }, { data: remoteProfile, error: profileLoadError }, { data: remoteReminders, error: remindersError }] = await Promise.all([
         supabase!.from("entries").select("id,text,category,value,event_time,macros,expense").order("event_time", { ascending: false }),
         supabase!.from("profiles").select("display_name,avatar_data_url,avatar_color,focus_areas,macro_goals,spend_budget,theme,created_at").maybeSingle(),
+        supabase!.from("reminders").select("id,text,remind_at,status,created_at").order("remind_at", { ascending: true }),
       ]);
       if (!active) return;
-      if (entriesError || profileLoadError) {
+      if (entriesError || profileLoadError || remindersError) {
         setSyncState("error");
         setCloudHydrated(true);
         return;
@@ -482,6 +572,7 @@ export default function Home() {
       }
       setEntries(nextEntries);
       window.localStorage.setItem("log-anything-entries", JSON.stringify(nextEntries));
+      setReminders(((remoteReminders as ReminderRow[] | null) || []).map(rowToReminder));
 
       if (remoteProfile) {
         const row = remoteProfile as ProfileRow;
@@ -626,6 +717,7 @@ export default function Home() {
   }, [entries, visualMonthOffset]);
 
   const searchResults = useMemo(() => entries.filter((entry) => `${entry.text} ${entry.category} ${entry.value || ""} ${entry.expense?.merchant || ""} ${entry.expense?.spendCategory || ""} ${entry.macros?.items?.join(" ") || ""}`.toLowerCase().includes(query.toLowerCase())), [entries, query]);
+  const upcomingReminders = useMemo(() => reminders.filter((reminder) => reminder.status === "pending" && reminder.remindAt > Date.now()).sort((a, b) => a.remindAt - b.remindAt), [reminders]);
   const editingEntry = entries.find((entry) => entry.id === editingEntryId);
   const overlayCopy: Record<Exclude<Overlay, null>, { eyebrow: string; title: string }> = {
     search: { eyebrow: "Find a moment", title: "Search your logs" }, visuals: { eyebrow: "See the bigger picture", title: "Your month, visualized" },
@@ -641,10 +733,22 @@ export default function Home() {
     const clean = text.trim();
     if (!clean) { textareaRef.current?.focus(); return; }
     const now = new Date();
+    const reminder = parseReminder(clean, now);
+    if (hasReminderIntent(clean) && !reminder) {
+      setSavedMessage("Add a future day and time, like “Wednesday at 3 PM.”");
+      window.setTimeout(() => setSavedMessage(""), 3200);
+      return;
+    }
     const next: Entry = { id: `${now.getTime()}`, text: clean, ...classifyEntry(clean), time: formatTime(now), timestamp: now.getTime() };
     const updated = [next, ...entries];
     persistEntries(updated);
-    setDraft(""); setSaved(true); window.setTimeout(() => setSaved(false), 1800);
+    if (reminder) {
+      const nextReminder: Reminder = { id: next.id, text: clean, remindAt: reminder.remindAt, status: "pending", createdAt: now.getTime() };
+      setReminders((current) => [...current.filter((item) => item.id !== next.id), nextReminder]);
+      void persistReminder(nextReminder);
+      setSavedMessage(`Reminder set for ${reminder.label}`);
+    } else setSavedMessage("Saved and sorted");
+    setDraft(""); window.setTimeout(() => setSavedMessage(""), 3000);
   }
 
   function addEntry(event?: FormEvent) { event?.preventDefault(); saveText(draft); }
@@ -665,6 +769,46 @@ export default function Home() {
     if (supabase && session) {
       setSyncState("loading");
       void supabase.from("entries").delete().eq("id", id).then(({ error }) => setSyncState(error ? "error" : "saved"));
+      if (reminders.some((reminder) => reminder.id === id)) void supabase.from("reminders").delete().eq("id", id);
+    }
+    setReminders((current) => current.filter((reminder) => reminder.id !== id));
+  }
+
+  async function persistReminder(reminder: Reminder) {
+    const supabase = getSupabase();
+    if (!supabase || !session) return;
+    const { error } = await supabase.from("reminders").upsert({ id: reminder.id, user_id: session.user.id, text: reminder.text, remind_at: new Date(reminder.remindAt).toISOString(), status: reminder.status, updated_at: new Date().toISOString() });
+    setSyncState(error ? "error" : "saved");
+  }
+
+  async function cancelReminder(id: string) {
+    setReminders((current) => current.map((reminder) => reminder.id === id ? { ...reminder, status: "cancelled" } : reminder));
+    const supabase = getSupabase();
+    if (supabase && session) await supabase.from("reminders").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("id", id);
+  }
+
+  async function enableNotifications() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window) || !vapidPublicKey) { setNotificationState("unsupported"); return; }
+    setNotificationState("enabling");
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") { setNotificationState(permission === "denied" ? "blocked" : "off"); return; }
+    try {
+      const rootUrl = new URL(pageHref("today"), window.location.href);
+      const registration = await navigator.serviceWorker.register(new URL("sw.js", rootUrl).pathname, { scope: rootUrl.pathname });
+      await navigator.serviceWorker.ready;
+      const existing = await registration.pushManager.getSubscription();
+      const subscription = existing || await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) });
+      const json = subscription.toJSON();
+      const supabase = getSupabase();
+      if (!supabase || !session || !json.endpoint || !json.keys?.p256dh || !json.keys?.auth) throw new Error("Subscription could not be saved");
+      const { error } = await supabase.from("push_subscriptions").upsert({ user_id: session.user.id, endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth, user_agent: navigator.userAgent, updated_at: new Date().toISOString() }, { onConflict: "endpoint" });
+      if (error) throw error;
+      setNotificationState("on");
+      await registration.showNotification("MemoryDock notifications are on", { body: "Your reminders can now reach this device.", icon: new URL("favicon.svg", rootUrl).pathname, badge: new URL("favicon.svg", rootUrl).pathname, tag: "memorydock-enabled" });
+    } catch {
+      setNotificationState("off");
+      setSavedMessage("Notifications could not be enabled. Try again from the installed Home Screen app.");
+      window.setTimeout(() => setSavedMessage(""), 4200);
     }
   }
 
@@ -802,7 +946,7 @@ export default function Home() {
     const supabase = getSupabase();
     if (!supabase) return;
     await supabase.auth.signOut();
-    setEntries([]); setProfile(null); setDisplayName("Shay"); setCloudHydrated(false);
+    setEntries([]); setReminders([]); setProfile(null); setDisplayName("Shay"); setCloudHydrated(false);
   }
 
   function clearAllLogs() {
@@ -874,7 +1018,7 @@ export default function Home() {
             </div>
           </div>
         </form>
-        {saved && <div className="toast" role="status">Saved and sorted</div>}
+        {savedMessage && <div className="toast" role="status">{savedMessage}</div>}
       </section>
 
       <div className="prompt-row" aria-label="Example logs">{["Chicken, rice and broccoli for lunch", "Spent $46 at ShopRite on groceries", "Slept 7 hours"].map((prompt) => <button key={prompt} onClick={() => { setDraft(prompt); textareaRef.current?.focus(); }}>{prompt}</button>)}</div>
@@ -900,6 +1044,10 @@ export default function Home() {
         <div className="rail-title"><span><Glyph name="spark" size={17} /></span><h2>Daily snapshot</h2></div>
         <div className="snapshot-grid"><div><small>Logs</small><strong>{stats.count}</strong><span>today</span></div><div><small>Spent</small><strong>${stats.expense.toFixed(2)}</strong><span>today</span></div></div>
         <div className="mood-row"><span className="mood-face"><Glyph name="smile" /></span><span><small>Latest mood</small><strong>{stats.latestMood}</strong></span></div>
+      </section>
+      <section className="rail-card reminder-rail-card">
+        <div className="rail-title"><span><Glyph name="bell" size={17} /></span><h2>Next reminder</h2><a href={pageHref("settings")} onClick={(event) => navigatePage(event, "settings")}>Manage</a></div>
+        {upcomingReminders[0] ? <div className="next-reminder"><strong>{upcomingReminders[0].text}</strong><span>{new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(upcomingReminders[0].remindAt)}</span></div> : <p className="rail-empty">Say “Remind me…” and include a day and time.</p>}
       </section>
       <section className="rail-card macro-rail-card">
         <div className="rail-title"><span><Glyph name="fork" size={17} /></span><h2>Today’s macros</h2><a href={pageHref("meals")} onClick={(event) => navigatePage(event, "meals")}>View</a></div>
@@ -1061,6 +1209,11 @@ export default function Home() {
         {panel === "settings" && <div className="settings-view">
           <a className="setting-row profile-setting" href={pageHref("profile")} onClick={(event) => navigatePage(event, "profile")}><span><strong>{profile ? "Profile" : "Create your profile"}</strong><small>{profile ? `${profile.name} · ${profile.focusAreas.length ? profile.focusAreas.join(", ") : "Add focus areas"}` : "Add your name, photo, color, and focus areas"}</small></span><ProfileAvatar name={profile?.name || displayName} avatarDataUrl={profile?.avatarDataUrl} avatarColor={profile?.avatarColor || avatarColors[0]} /></a>
           {session && <div className="setting-row account-setting"><span><strong>Account</strong><small>{session.user.email} · Your data is synced</small></span><button type="button" onClick={signOut}>Sign out</button></div>}
+          <div className="setting-row notification-setting"><span><strong>Device reminders</strong><small>{notificationState === "on" ? "Notifications are enabled on this device" : notificationState === "blocked" ? "Notifications are blocked in this device’s settings" : notificationState === "unsupported" ? "On iPhone, add MemoryDock to the Home Screen first" : "Get reminders even when MemoryDock is closed"}</small></span>{notificationState === "on" ? <em>On</em> : <button type="button" disabled={notificationState === "enabling" || notificationState === "blocked"} onClick={enableNotifications}>{notificationState === "enabling" ? "Turning on…" : notificationState === "blocked" ? "Blocked" : "Turn on"}</button>}</div>
+          <section className="reminder-settings">
+            <div><h3>Upcoming reminders</h3><p>Try: “Remind me about my appointment Wednesday at 3 PM.”</p></div>
+            {upcomingReminders.length ? <div className="reminder-list">{upcomingReminders.map((reminder) => <article key={reminder.id}><span><Glyph name="bell" size={16} /></span><div><strong>{reminder.text}</strong><small>{new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(reminder.remindAt)}</small></div><button type="button" onClick={() => cancelReminder(reminder.id)}>Cancel</button></article>)}</div> : <p className="subtle-empty">No upcoming reminders.</p>}
+          </section>
           <button className="setting-row" onClick={toggleTheme}><span><strong>Appearance</strong><small>Switch between light and evening mode</small></span><em>{theme === "day" ? "Light" : "Evening"}</em></button>
           <button className="setting-row" onClick={exportLogs}><span><strong>Export your logs</strong><small>Download a private copy as a data file</small></span><Glyph name="chevron" size={18} /></button>
           <div className="install-note"><DockMark compact /><p><strong>Use it like an app</strong>On iPhone, tap Share, then “Add to Home Screen” for one-tap logging.</p></div>

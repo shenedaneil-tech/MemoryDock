@@ -31,8 +31,35 @@ create table if not exists public.entries (
 create index if not exists entries_user_event_time_idx
   on public.entries (user_id, event_time desc);
 
+create table if not exists public.reminders (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  text text not null,
+  remind_at timestamptz not null,
+  status text not null default 'pending' check (status in ('pending', 'sent', 'cancelled')),
+  sent_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.push_subscriptions (
+  endpoint text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  p256dh text not null,
+  auth text not null,
+  user_agent text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists reminders_due_idx on public.reminders (status, remind_at);
+create index if not exists reminders_user_due_idx on public.reminders (user_id, remind_at);
+create index if not exists push_subscriptions_user_idx on public.push_subscriptions (user_id);
+
 alter table public.profiles enable row level security;
 alter table public.entries enable row level security;
+alter table public.reminders enable row level security;
+alter table public.push_subscriptions enable row level security;
 
 drop policy if exists "Users can read their profile" on public.profiles;
 create policy "Users can read their profile" on public.profiles
@@ -65,3 +92,21 @@ create policy "Users can update their entries" on public.entries
 drop policy if exists "Users can delete their entries" on public.entries;
 create policy "Users can delete their entries" on public.entries
   for delete using (auth.uid() = user_id);
+
+drop policy if exists "Users can read their reminders" on public.reminders;
+create policy "Users can read their reminders" on public.reminders for select using (auth.uid() = user_id);
+drop policy if exists "Users can create their reminders" on public.reminders;
+create policy "Users can create their reminders" on public.reminders for insert with check (auth.uid() = user_id);
+drop policy if exists "Users can update their reminders" on public.reminders;
+create policy "Users can update their reminders" on public.reminders for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "Users can delete their reminders" on public.reminders;
+create policy "Users can delete their reminders" on public.reminders for delete using (auth.uid() = user_id);
+
+drop policy if exists "Users can read their push subscriptions" on public.push_subscriptions;
+create policy "Users can read their push subscriptions" on public.push_subscriptions for select using (auth.uid() = user_id);
+drop policy if exists "Users can create their push subscriptions" on public.push_subscriptions;
+create policy "Users can create their push subscriptions" on public.push_subscriptions for insert with check (auth.uid() = user_id);
+drop policy if exists "Users can update their push subscriptions" on public.push_subscriptions;
+create policy "Users can update their push subscriptions" on public.push_subscriptions for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "Users can delete their push subscriptions" on public.push_subscriptions;
+create policy "Users can delete their push subscriptions" on public.push_subscriptions for delete using (auth.uid() = user_id);
