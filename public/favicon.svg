@@ -1,0 +1,11 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <rect width="128" height="128" rx="28" fill="#F7F3E9"/>
+  <g>
+    <g fill="#D89A29"><circle cx="27" cy="57" r="5"/><circle cx="27" cy="71" r="5"/></g>
+    <g fill="#EC7B2C"><circle cx="41" cy="43" r="5"/><circle cx="41" cy="57" r="5"/><circle cx="41" cy="71" r="5"/><circle cx="41" cy="85" r="5"/></g>
+    <g fill="#EF6C2D"><circle cx="55" cy="29" r="5"/><circle cx="55" cy="43" r="5"/><circle cx="55" cy="57" r="5"/><circle cx="55" cy="71" r="5"/><circle cx="55" cy="85" r="5"/><circle cx="55" cy="99" r="5"/></g>
+    <g fill="#D7A02C"><circle cx="69" cy="43" r="5"/><circle cx="69" cy="57" r="5"/><circle cx="69" cy="71" r="5"/><circle cx="69" cy="85" r="5"/></g>
+    <g fill="#78934E"><circle cx="83" cy="36" r="5"/><circle cx="83" cy="50" r="5"/><circle cx="83" cy="64" r="5"/><circle cx="83" cy="78" r="5"/><circle cx="83" cy="92" r="5"/></g>
+    <g fill="#376A50"><circle cx="97" cy="50" r="5"/><circle cx="97" cy="64" r="5"/><circle cx="97" cy="78" r="5"/></g>
+  </g>
+</svg>
