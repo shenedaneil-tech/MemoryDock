@@ -27,7 +27,7 @@ npm run dev
 npm run build
 ```
 
-The current project uses Vinext and produces a Cloudflare Worker-compatible build. GitHub stores the source code, while the live version is hosted separately. A static export workflow is still required before deploying this version through GitHub Pages.
+The standard build uses Vinext and produces a Cloudflare Worker-compatible app. The `build:pages` script creates a static export for GitHub Pages. Every push to `main` runs the included deployment workflow and publishes the site at [shenedaneil-tech.github.io/MemoryDock](https://shenedaneil-tech.github.io/MemoryDock/).
 
 ## Data storage
 
