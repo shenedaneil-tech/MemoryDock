@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChangeEvent, CSSProperties, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
+import { getSupabase, isCloudSyncConfigured } from "../lib/supabase";
 
 type Category = "Expense" | "Sleep" | "Movement" | "Mood" | "Meal" | "Social" | "Idea" | "Habit" | "Metric" | "Note";
 type SpendCategory = "Groceries" | "Dining" | "Transportation" | "Shopping" | "Bills" | "Health" | "Entertainment" | "Giving" | "Other";
@@ -18,6 +20,29 @@ type FocusArea = "Nutrition" | "Spending" | "Wellness" | "Habits" | "Memories";
 type Profile = { name: string; avatarDataUrl?: string; avatarColor: string; focusAreas: FocusArea[]; createdAt: number };
 type ProfileDraft = Omit<Profile, "createdAt">;
 type VisualSection = "overview" | "mood" | "movement" | "nutrition" | "spending" | "sleep";
+type AuthMode = "sign-in" | "create";
+type SyncState = "local" | "loading" | "saved" | "error";
+
+type EntryRow = {
+  id: string;
+  text: string;
+  category: Category;
+  value: string | null;
+  event_time: string;
+  macros: Macros | null;
+  expense: ExpenseInfo | null;
+};
+
+type ProfileRow = {
+  display_name: string;
+  avatar_data_url: string | null;
+  avatar_color: string;
+  focus_areas: FocusArea[];
+  macro_goals: { calories: number; protein: number; carbs: number; fat: number };
+  spend_budget: number;
+  theme: "day" | "night";
+  created_at: string;
+};
 
 const starterEntries: Entry[] = [
   { id: "sample-mood", text: "Feeling calm and focused this morning", category: "Mood", value: "Calm", time: "8:42 AM", timestamp: 4 },
@@ -271,10 +296,81 @@ function classifyEntry(text: string): Pick<Entry, "category" | "value" | "macros
 
 function formatTime(date: Date) { return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); }
 
+function entryToRow(entry: Entry, userId: string) {
+  return {
+    id: entry.id,
+    user_id: userId,
+    text: entry.text,
+    category: entry.category,
+    value: entry.value || null,
+    event_time: new Date(entry.timestamp).toISOString(),
+    macros: entry.macros || null,
+    expense: entry.expense || null,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function rowToEntry(row: EntryRow): Entry {
+  const date = new Date(row.event_time);
+  return {
+    id: row.id,
+    text: row.text,
+    category: row.category,
+    value: row.value || undefined,
+    time: formatTime(date),
+    timestamp: date.getTime(),
+    macros: row.macros || undefined,
+    expense: row.expense || undefined,
+  };
+}
+
+function AuthScreen({ mode, email, password, message, busy, onMode, onEmail, onPassword, onSubmit }: {
+  mode: AuthMode;
+  email: string;
+  password: string;
+  message: string;
+  busy: boolean;
+  onMode: (mode: AuthMode) => void;
+  onEmail: (value: string) => void;
+  onPassword: (value: string) => void;
+  onSubmit: (event: FormEvent) => void;
+}) {
+  return <main className="auth-shell">
+    <section className="auth-card">
+      <div className="auth-brand"><DockMark /><span><strong>MemoryDock</strong><small>Your life, safely docked.</small></span></div>
+      <div className="auth-copy">
+        <small>{mode === "create" ? "Create your private dock" : "Welcome back"}</small>
+        <h1>{mode === "create" ? "One account for every memory." : "Sign in to your MemoryDock."}</h1>
+        <p>Your meals, macros, spending, moods, movement, and notes will be securely synced across your devices.</p>
+      </div>
+      <form className="auth-form" onSubmit={onSubmit}>
+        <label><span>Email address</span><input type="email" autoComplete="email" required value={email} onChange={(event) => onEmail(event.target.value)} placeholder="you@example.com" /></label>
+        <label><span>Password</span><input type="password" autoComplete={mode === "create" ? "new-password" : "current-password"} minLength={6} required value={password} onChange={(event) => onPassword(event.target.value)} placeholder="At least 6 characters" /></label>
+        {message && <p className="auth-message" role="status">{message}</p>}
+        <button type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "create" ? "Create account" : "Sign in"}</button>
+      </form>
+      <button className="auth-switch" type="button" onClick={() => onMode(mode === "create" ? "sign-in" : "create")}>
+        {mode === "create" ? "Already have an account? Sign in" : "New to MemoryDock? Create an account"}
+      </button>
+      <p className="auth-privacy">Each account can only access its own MemoryDock data.</p>
+    </section>
+  </main>;
+}
+
 export default function Home() {
   const pathname = usePathname();
   const activePage = pageFromPath(pathname);
   const [entries, setEntries] = useState<Entry[]>(starterEntries);
+  const [localReady, setLocalReady] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(!isCloudSyncConfigured);
+  const [authMode, setAuthMode] = useState<AuthMode>("sign-in");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [syncState, setSyncState] = useState<SyncState>(isCloudSyncConfigured ? "loading" : "local");
+  const [cloudHydrated, setCloudHydrated] = useState(!isCloudSyncConfigured);
   const [draft, setDraft] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -323,9 +419,111 @@ export default function Home() {
       setSpendBudget(Math.max(0, Number(window.localStorage.getItem("log-anything-spend-budget")) || 0));
       setDateLabel(new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(new Date()));
       const hour = new Date().getHours(); setGreeting(hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening");
+      setLocalReady(true);
     }, 0);
     return () => window.clearTimeout(hydrateTimer);
   }, []);
+
+  useEffect(() => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    let active = true;
+    void supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      setSession(data.session);
+      setAuthReady(true);
+      setSyncState(data.session ? "loading" : "local");
+      setCloudHydrated(!data.session);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!active) return;
+      setSession(nextSession);
+      setAuthReady(true);
+      setSyncState(nextSession ? "loading" : "local");
+      setCloudHydrated(!nextSession);
+    });
+    return () => { active = false; listener.subscription.unsubscribe(); };
+  }, []);
+
+  useEffect(() => {
+    const supabase = getSupabase();
+    if (!supabase || !session || !localReady) return;
+    let active = true;
+    const userId = session.user.id;
+
+    async function hydrateCloud() {
+      setSyncState("loading");
+      const [{ data: remoteEntries, error: entriesError }, { data: remoteProfile, error: profileLoadError }] = await Promise.all([
+        supabase!.from("entries").select("id,text,category,value,event_time,macros,expense").order("event_time", { ascending: false }),
+        supabase!.from("profiles").select("display_name,avatar_data_url,avatar_color,focus_areas,macro_goals,spend_budget,theme,created_at").maybeSingle(),
+      ]);
+      if (!active) return;
+      if (entriesError || profileLoadError) {
+        setSyncState("error");
+        setCloudHydrated(true);
+        return;
+      }
+
+      let nextEntries = (remoteEntries as EntryRow[] | null)?.map(rowToEntry) || [];
+      if (!nextEntries.length) {
+        const stored = window.localStorage.getItem("log-anything-entries");
+        let localEntries: Entry[] = [];
+        if (stored) { try { localEntries = (JSON.parse(stored) as Entry[]).filter((entry) => !entry.id.startsWith("sample-")); } catch { /* skip invalid local data */ } }
+        if (localEntries.length) {
+          const { error } = await supabase!.from("entries").upsert(localEntries.map((entry) => entryToRow(enrichEntry(entry), userId)));
+          if (!error) nextEntries = localEntries.map((entry) => enrichEntry(entry));
+        }
+      }
+      setEntries(nextEntries);
+      window.localStorage.setItem("log-anything-entries", JSON.stringify(nextEntries));
+
+      if (remoteProfile) {
+        const row = remoteProfile as ProfileRow;
+        const nextProfile: Profile = {
+          name: row.display_name || session!.user.email?.split("@")[0] || "You",
+          avatarDataUrl: row.avatar_data_url || undefined,
+          avatarColor: row.avatar_color || avatarColors[0],
+          focusAreas: row.focus_areas || [],
+          createdAt: new Date(row.created_at).getTime(),
+        };
+        setProfile(nextProfile);
+        setProfileDraft({ name: nextProfile.name, avatarDataUrl: nextProfile.avatarDataUrl, avatarColor: nextProfile.avatarColor, focusAreas: nextProfile.focusAreas });
+        setDisplayName(nextProfile.name);
+        setMacroGoals(row.macro_goals || { calories: 2000, protein: 100, carbs: 250, fat: 65 });
+        setSpendBudget(Number(row.spend_budget) || 0);
+        setTheme(row.theme === "night" ? "night" : "day");
+      } else {
+        const storedProfile = window.localStorage.getItem("memorydock-profile-v1");
+        let localProfile: Profile | null = null;
+        if (storedProfile) { try { localProfile = JSON.parse(storedProfile) as Profile; } catch { /* use email fallback */ } }
+        const fallbackName = localProfile?.name || session!.user.email?.split("@")[0] || "You";
+        const nextProfile: Profile = localProfile || { name: fallbackName, avatarColor: avatarColors[0], focusAreas: [], createdAt: Date.now() };
+        const { error } = await supabase!.from("profiles").upsert({
+          user_id: userId,
+          display_name: nextProfile.name,
+          avatar_data_url: nextProfile.avatarDataUrl || null,
+          avatar_color: nextProfile.avatarColor,
+          focus_areas: nextProfile.focusAreas,
+          macro_goals: macroGoals,
+          spend_budget: spendBudget,
+          theme,
+          updated_at: new Date().toISOString(),
+        });
+        if (!error) {
+          setProfile(nextProfile);
+          setProfileDraft({ name: nextProfile.name, avatarDataUrl: nextProfile.avatarDataUrl, avatarColor: nextProfile.avatarColor, focusAreas: nextProfile.focusAreas });
+          setDisplayName(nextProfile.name);
+        }
+      }
+      setSyncState("saved");
+      setCloudHydrated(true);
+    }
+
+    void hydrateCloud();
+    return () => { active = false; };
+    // Cloud hydration runs once per authenticated person after local hydration.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localReady, session?.user.id]);
 
   useEffect(() => {
     if (!overlay) return;
@@ -447,11 +645,21 @@ export default function Home() {
 
   function persistEntries(updated: Entry[]) {
     setEntries(updated); window.localStorage.setItem("log-anything-entries", JSON.stringify(updated));
+    const supabase = getSupabase();
+    if (supabase && session) {
+      setSyncState("loading");
+      void supabase.from("entries").upsert(updated.map((entry) => entryToRow(entry, session.user.id))).then(({ error }) => setSyncState(error ? "error" : "saved"));
+    }
   }
 
   function removeEntry(id: string) {
     const updated = entries.filter((entry) => entry.id !== id);
     persistEntries(updated);
+    const supabase = getSupabase();
+    if (supabase && session) {
+      setSyncState("loading");
+      void supabase.from("entries").delete().eq("id", id).then(({ error }) => setSyncState(error ? "error" : "saved"));
+    }
   }
 
   function openEntryEditor(entry: Entry) {
@@ -479,6 +687,7 @@ export default function Home() {
 
   function saveMacroGoals(next: typeof macroGoals) {
     setMacroGoals(next); window.localStorage.setItem("log-anything-macro-goals", JSON.stringify(next));
+    void saveCloudProfileFields({ macro_goals: next });
   }
 
   function startVoice() {
@@ -494,6 +703,7 @@ export default function Home() {
   function toggleTheme() {
     const next = theme === "day" ? "night" : "day";
     setTheme(next); window.localStorage.setItem("log-anything-theme", next);
+    void saveCloudProfileFields({ theme: next });
   }
 
   function exportLogs() {
@@ -505,6 +715,15 @@ export default function Home() {
 
   function saveSpendBudget(value: number) {
     const next = Math.max(0, value || 0); setSpendBudget(next); window.localStorage.setItem("log-anything-spend-budget", String(next));
+    void saveCloudProfileFields({ spend_budget: next });
+  }
+
+  async function saveCloudProfileFields(fields: Record<string, unknown>) {
+    const supabase = getSupabase();
+    if (!supabase || !session) return;
+    setSyncState("loading");
+    const { error } = await supabase.from("profiles").upsert({ user_id: session.user.id, ...fields, updated_at: new Date().toISOString() });
+    setSyncState(error ? "error" : "saved");
   }
 
   function exportSpending() {
@@ -547,15 +766,58 @@ export default function Home() {
     if (!name) { setProfileError("Add your name so MemoryDock can personalize your space."); return; }
     const next: Profile = { ...profileDraft, name, createdAt: profile?.createdAt || Date.now() };
     setProfile(next); setDisplayName(name); window.localStorage.setItem("memorydock-profile-v1", JSON.stringify(next)); window.localStorage.setItem("log-anything-name", name); setProfileError(""); setOverlay(null);
+    void saveCloudProfileFields({ display_name: name, avatar_data_url: next.avatarDataUrl || null, avatar_color: next.avatarColor, focus_areas: next.focusAreas });
   }
 
   function deleteProfile() {
     if (!window.confirm("Delete your profile? Your logs, meals, and spending will stay saved.")) return;
     window.localStorage.removeItem("memorydock-profile-v1"); window.localStorage.removeItem("log-anything-name");
     setProfile(null); setDisplayName("Shay"); setProfileDraft({ name: "Shay", avatarColor: avatarColors[0], focusAreas: [] }); setOverlay(null);
+    const supabase = getSupabase();
+    if (supabase && session) void supabase.from("profiles").delete().eq("user_id", session.user.id);
+  }
+
+  async function handleAuth(event: FormEvent) {
+    event.preventDefault();
+    const supabase = getSupabase();
+    if (!supabase) return;
+    setAuthBusy(true); setAuthMessage("");
+    const email = authEmail.trim();
+    const result = authMode === "create"
+      ? await supabase.auth.signUp({ email, password: authPassword, options: { emailRedirectTo: window.location.href } })
+      : await supabase.auth.signInWithPassword({ email, password: authPassword });
+    setAuthBusy(false);
+    if (result.error) { setAuthMessage(result.error.message); return; }
+    setAuthPassword("");
+    if (authMode === "create" && !result.data.session) setAuthMessage("Check your email to confirm your account, then come back and sign in.");
+  }
+
+  async function signOut() {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    setEntries([]); setProfile(null); setDisplayName("Shay"); setCloudHydrated(false);
+  }
+
+  function clearAllLogs() {
+    if (!window.confirm("Clear every saved log from your MemoryDock account?")) return;
+    setEntries([]); window.localStorage.setItem("log-anything-entries", "[]"); setOverlay(null);
+    const supabase = getSupabase();
+    if (supabase && session) {
+      setSyncState("loading");
+      void supabase.from("entries").delete().eq("user_id", session.user.id).then(({ error }) => setSyncState(error ? "error" : "saved"));
+    }
   }
 
   function openOverlay(next: Exclude<Overlay, null>) { setOverlay(next); if (next !== "search") setQuery(""); }
+
+  if (isCloudSyncConfigured && (!authReady || (session && !cloudHydrated))) {
+    return <main className="auth-shell"><section className="auth-card auth-loading"><DockMark /><h1>Opening your MemoryDock…</h1><p>Loading your private account and saved data.</p></section></main>;
+  }
+
+  if (isCloudSyncConfigured && !session) {
+    return <AuthScreen mode={authMode} email={authEmail} password={authPassword} message={authMessage} busy={authBusy} onMode={(mode) => { setAuthMode(mode); setAuthMessage(""); }} onEmail={setAuthEmail} onPassword={setAuthPassword} onSubmit={handleAuth} />;
+  }
 
   return <main className={`app-shell ${theme === "night" ? "night" : ""} ${activePage !== "today" ? "page-mode" : ""}`}>
     <aside className="sidebar">
@@ -576,7 +838,7 @@ export default function Home() {
     <section className="main-panel home-panel" id="top">
       <header className="topbar">
         <div><p className="eyebrow">{dateLabel}</p><h1>{greeting}, {displayName}.</h1></div>
-        <div className="header-actions"><button className="icon-button" onClick={() => openOverlay("search")} aria-label="Search"><Glyph name="search" /></button><button className="icon-button" onClick={toggleTheme} aria-label="Change appearance"><Glyph name="sun" /></button><Link className="mobile-mark" href="/settings" aria-label="Open settings"><DockMark compact /></Link></div>
+        <div className="header-actions">{session && <span className={`sync-pill ${syncState}`}><i />{syncState === "loading" ? "Syncing" : syncState === "error" ? "Sync issue" : "Synced"}</span>}<button className="icon-button" onClick={() => openOverlay("search")} aria-label="Search"><Glyph name="search" /></button><button className="icon-button" onClick={toggleTheme} aria-label="Change appearance"><Glyph name="sun" /></button><Link className="mobile-mark" href="/settings" aria-label="Open settings"><DockMark compact /></Link></div>
       </header>
 
       <section className="capture-card" id="today">
@@ -770,18 +1032,19 @@ export default function Home() {
           <fieldset className="profile-fieldset"><legend>Avatar color</legend><div className="color-swatches">{avatarColors.map((color) => <button type="button" aria-label={`Use ${color} as avatar color`} aria-pressed={profileDraft.avatarColor === color} className={profileDraft.avatarColor === color ? "selected" : ""} style={{ background: color }} key={color} onClick={() => setProfileDraft({ ...profileDraft, avatarColor: color })} />)}</div></fieldset>
           <fieldset className="profile-fieldset"><legend>What do you want to notice?</legend><p>Pick any focus areas. You can change these later.</p><div className="focus-chips">{focusAreas.map((area) => { const selected = profileDraft.focusAreas.includes(area); return <button type="button" aria-pressed={selected} className={selected ? "selected" : ""} key={area} onClick={() => setProfileDraft({ ...profileDraft, focusAreas: selected ? profileDraft.focusAreas.filter((item) => item !== area) : [...profileDraft.focusAreas, area] })}>{area}</button>; })}</div></fieldset>
           {profileError && <p className="profile-error" role="alert">{profileError}</p>}
-          <div className="profile-privacy"><Glyph name="spark" size={17} /><p><strong>Private on this device</strong>Your profile and photo stay in this browser with your logs.</p></div>
+          <div className="profile-privacy"><Glyph name="spark" size={17} /><p><strong>{session ? "Private to your account" : "Private on this device"}</strong>{session ? "Your profile and logs securely sync whenever you sign in." : "Your profile and photo stay in this browser with your logs."}</p></div>
           <div className="profile-actions"><Link href={profile ? "/settings" : "/"}>{profile ? "Cancel" : "Not now"}</Link><button type="submit">{profile ? "Save changes" : "Create profile"}</button></div>
           {profile && <button className="delete-profile" type="button" onClick={deleteProfile}>Delete profile</button>}
         </form>}
 
         {panel === "settings" && <div className="settings-view">
           <Link className="setting-row profile-setting" href="/profile"><span><strong>{profile ? "Profile" : "Create your profile"}</strong><small>{profile ? `${profile.name} · ${profile.focusAreas.length ? profile.focusAreas.join(", ") : "Add focus areas"}` : "Add your name, photo, color, and focus areas"}</small></span><ProfileAvatar name={profile?.name || displayName} avatarDataUrl={profile?.avatarDataUrl} avatarColor={profile?.avatarColor || avatarColors[0]} /></Link>
+          {session && <div className="setting-row account-setting"><span><strong>Account</strong><small>{session.user.email} · Your data is synced</small></span><button type="button" onClick={signOut}>Sign out</button></div>}
           <button className="setting-row" onClick={toggleTheme}><span><strong>Appearance</strong><small>Switch between light and evening mode</small></span><em>{theme === "day" ? "Light" : "Evening"}</em></button>
           <button className="setting-row" onClick={exportLogs}><span><strong>Export your logs</strong><small>Download a private copy as a data file</small></span><Glyph name="chevron" size={18} /></button>
           <div className="install-note"><DockMark compact /><p><strong>Use it like an app</strong>On iPhone, tap Share, then “Add to Home Screen” for one-tap logging.</p></div>
-          <div className="privacy-note"><Glyph name="spark" size={18} /><p><strong>Private by default</strong>Typed entries stay in this browser on this device. Voice transcription depends on your browser.</p></div>
-          <button className="clear-button" onClick={() => { if (window.confirm("Clear every saved log on this device?")) { setEntries([]); window.localStorage.setItem("log-anything-entries", "[]"); setOverlay(null); } }}>Clear all logs</button>
+          <div className="privacy-note"><Glyph name="spark" size={18} /><p><strong>Private by default</strong>{session ? "Your account data is protected so only you can read or change it." : "Typed entries stay in this browser on this device."} Voice transcription depends on your browser.</p></div>
+          <button className="clear-button" onClick={clearAllLogs}>Clear all logs</button>
         </div>}
       </section>
     </div>}

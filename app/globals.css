@@ -449,6 +449,40 @@ button.setting-row:hover { background: #f5f3ec; }
 .install-note { margin-top: 5px; align-items: center; }
 .install-note .dock-mark { flex: 0 0 30px; }
 .clear-button { justify-self: start; margin-top: 8px; border: 0; background: transparent; color: #ac5139; font-size: 10px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.sync-pill { height: 30px; padding: 0 11px; border: 1px solid #d9e5dc; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; background: #edf4ee; color: #4d735b; font-size: 8px; font-weight: 800; }
+.sync-pill i { width: 6px; height: 6px; border-radius: 50%; background: #4f8464; }
+.sync-pill.loading i { animation: syncPulse 1s ease-in-out infinite; }
+.sync-pill.error { border-color: #edcfc6; background: #f9e9e4; color: #a64d38; }
+.sync-pill.error i { background: #bd5f45; }
+.account-setting > span { min-width: 0; }
+.account-setting > span small { overflow: hidden; text-overflow: ellipsis; }
+.account-setting > button { flex: 0 0 auto; border: 1px solid #d8ddd9; border-radius: 999px; padding: 8px 12px; background: white; color: var(--green); font-size: 8px; font-weight: 800; cursor: pointer; }
+.auth-shell { min-height: 100vh; padding: 34px 18px; display: grid; place-items: center; background: radial-gradient(circle at 50% 0%, #f6ead4 0, transparent 42%), #f5f2e8; color: #1f2923; }
+.auth-card { width: min(470px, 100%); padding: 34px; border: 1px solid rgba(49,94,71,.12); border-radius: 28px; background: rgba(255,254,249,.96); box-shadow: 0 28px 80px rgba(45,58,48,.13); }
+.auth-brand { display: flex; align-items: center; gap: 12px; }
+.auth-brand .dock-mark { width: 48px; height: 48px; }
+.auth-brand > span { display: grid; gap: 2px; }
+.auth-brand strong { font: 600 19px Georgia, serif; }
+.auth-brand small { color: #7d887f; font-size: 10px; }
+.auth-copy { margin: 34px 0 23px; }
+.auth-copy > small { color: #c77636; font-size: 9px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.auth-copy h1 { margin: 8px 0 10px; font: 500 34px/1.05 Georgia, serif; letter-spacing: -.025em; }
+.auth-copy p { margin: 0; color: #6d786f; font-size: 12px; line-height: 1.6; }
+.auth-form { display: grid; gap: 14px; }
+.auth-form label { display: grid; gap: 7px; }
+.auth-form label span { color: #526157; font-size: 9px; font-weight: 800; }
+.auth-form input { width: 100%; border: 1px solid #dadcd5; border-radius: 13px; padding: 13px 14px; outline: 0; background: #fbfaf5; color: #1f2923; font-size: 13px; }
+.auth-form input:focus { border-color: #6f907b; box-shadow: 0 0 0 3px rgba(49,94,71,.08); }
+.auth-form > button { min-height: 47px; margin-top: 4px; border: 0; border-radius: 14px; background: #315e47; color: white; font-size: 11px; font-weight: 900; cursor: pointer; }
+.auth-form > button:disabled { cursor: wait; opacity: .65; }
+.auth-message { margin: 0; padding: 10px 12px; border-radius: 10px; background: #f5e8dc; color: #945436; font-size: 9px; line-height: 1.45; }
+.auth-switch { width: 100%; margin-top: 17px; border: 0; background: transparent; color: #315e47; font-size: 10px; font-weight: 800; cursor: pointer; }
+.auth-privacy { margin: 18px 0 0; color: #8d968f; font-size: 8px; text-align: center; }
+.auth-loading { display: grid; justify-items: center; text-align: center; }
+.auth-loading .dock-mark { width: 64px; height: 64px; }
+.auth-loading h1 { margin: 20px 0 7px; font: 500 25px Georgia, serif; }
+.auth-loading p { margin: 0; color: #758077; font-size: 10px; }
+@keyframes syncPulse { 50% { opacity: .3; transform: scale(.75); } }
 @keyframes fadeIn { from { opacity: 0; } }
 @keyframes panelIn { from { opacity: 0; transform: translateY(12px) scale(.99); } }
 
