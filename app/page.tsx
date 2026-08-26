@@ -122,10 +122,18 @@ function Glyph({ name, size = 20 }: { name: string; size?: number }) {
   }
 }
 
-function SoundMark({ compact = false }: { compact?: boolean }) {
-  const bars = [3, 5, 7, 9, 6, 4, 2];
-  const colors = ["#d39a24", "#ed7d2c", "#ee6b2e", "#d49a26", "#79934a", "#3f7658", "#376653"];
-  return <div className={`sound-mark ${compact ? "compact" : ""}`} aria-hidden="true">{bars.map((count, col) => <span className="sound-column" key={col}>{Array.from({ length: count }).map((_, dot) => <i key={dot} style={{ background: colors[col] }} />)}</span>)}</div>;
+function DockMark({ compact = false }: { compact?: boolean }) {
+  return <svg className={`dock-mark ${compact ? "compact" : ""}`} viewBox="0 0 48 48" fill="none" aria-hidden="true">
+    <rect x="2" y="4" width="44" height="34" rx="9" fill="#315e47" />
+    <path d="M10 28V14l6 8 6-8v14" stroke="#fffaf0" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M27 14h4c5.2 0 9 2.5 9 7s-3.8 7-9 7h-4V14Z" stroke="#fffaf0" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="40" cy="10" r="1.8" fill="#f2ad45" />
+    <path d="M8 33.5h32" stroke="#e97832" strokeWidth="2.5" strokeLinecap="round" />
+    <rect x="10" y="38" width="4" height="5" rx="1" fill="#d9a22e" />
+    <rect x="18" y="38" width="4" height="5" rx="1" fill="#ed7d2c" />
+    <rect x="26" y="38" width="4" height="5" rx="1" fill="#d9a22e" />
+    <rect x="34" y="38" width="4" height="5" rx="1" fill="#ed7d2c" />
+  </svg>;
 }
 
 function initials(name: string) {
@@ -551,7 +559,7 @@ export default function Home() {
 
   return <main className={`app-shell ${theme === "night" ? "night" : ""} ${activePage !== "today" ? "page-mode" : ""}`}>
     <aside className="sidebar">
-      <Link className="brand" href="/" aria-label="MemoryDock home"><SoundMark /><span>MemoryDock</span></Link>
+      <Link className="brand" href="/" aria-label="MemoryDock home"><DockMark /><span>MemoryDock</span></Link>
       <nav className="side-nav" aria-label="Main navigation">
         <Link className={`nav-item ${activePage === "today" ? "active" : ""}`} href="/"><Glyph name="home" /><span>Today</span></Link>
         <Link className={`nav-item ${activePage === "timeline" ? "active" : ""}`} href="/timeline"><Glyph name="timeline" /><span>Timeline</span></Link>
@@ -568,7 +576,7 @@ export default function Home() {
     <section className="main-panel home-panel" id="top">
       <header className="topbar">
         <div><p className="eyebrow">{dateLabel}</p><h1>{greeting}, {displayName}.</h1></div>
-        <div className="header-actions"><button className="icon-button" onClick={() => openOverlay("search")} aria-label="Search"><Glyph name="search" /></button><button className="icon-button" onClick={toggleTheme} aria-label="Change appearance"><Glyph name="sun" /></button><Link className="mobile-mark" href="/settings" aria-label="Open settings"><SoundMark compact /></Link></div>
+        <div className="header-actions"><button className="icon-button" onClick={() => openOverlay("search")} aria-label="Search"><Glyph name="search" /></button><button className="icon-button" onClick={toggleTheme} aria-label="Change appearance"><Glyph name="sun" /></button><Link className="mobile-mark" href="/settings" aria-label="Open settings"><DockMark compact /></Link></div>
       </header>
 
       <section className="capture-card" id="today">
@@ -591,7 +599,7 @@ export default function Home() {
       <section className="timeline-section" id="timeline">
         <div className="section-heading"><div><p className="eyebrow">Your day, at a glance</p><h2>Today</h2></div><span className="entry-count">{stats.count} {stats.count === 1 ? "entry" : "entries"}</span></div>
         <div className="entry-list">
-          {stats.todayEntries.length === 0 ? <div className="empty-state"><SoundMark compact /><h3>Your day starts here</h3><p>Say or type anything above. We’ll turn it into a useful log.</p></div> : stats.todayEntries.map((entry) => {
+          {stats.todayEntries.length === 0 ? <div className="empty-state"><DockMark compact /><h3>Your day starts here</h3><p>Say or type anything above. We’ll turn it into a useful log.</p></div> : stats.todayEntries.map((entry) => {
             const meta = categoryMeta[entry.category];
             return <article className="entry-card" key={entry.id}>
               <div className={`category-icon ${meta.color}`}>{meta.icon === "$" ? <b>$</b> : <Glyph name={meta.icon} size={19} />}</div>
@@ -771,7 +779,7 @@ export default function Home() {
           <Link className="setting-row profile-setting" href="/profile"><span><strong>{profile ? "Profile" : "Create your profile"}</strong><small>{profile ? `${profile.name} · ${profile.focusAreas.length ? profile.focusAreas.join(", ") : "Add focus areas"}` : "Add your name, photo, color, and focus areas"}</small></span><ProfileAvatar name={profile?.name || displayName} avatarDataUrl={profile?.avatarDataUrl} avatarColor={profile?.avatarColor || avatarColors[0]} /></Link>
           <button className="setting-row" onClick={toggleTheme}><span><strong>Appearance</strong><small>Switch between light and evening mode</small></span><em>{theme === "day" ? "Light" : "Evening"}</em></button>
           <button className="setting-row" onClick={exportLogs}><span><strong>Export your logs</strong><small>Download a private copy as a data file</small></span><Glyph name="chevron" size={18} /></button>
-          <div className="install-note"><SoundMark compact /><p><strong>Use it like an app</strong>On iPhone, tap Share, then “Add to Home Screen” for one-tap logging.</p></div>
+          <div className="install-note"><DockMark compact /><p><strong>Use it like an app</strong>On iPhone, tap Share, then “Add to Home Screen” for one-tap logging.</p></div>
           <div className="privacy-note"><Glyph name="spark" size={18} /><p><strong>Private by default</strong>Typed entries stay in this browser on this device. Voice transcription depends on your browser.</p></div>
           <button className="clear-button" onClick={() => { if (window.confirm("Clear every saved log on this device?")) { setEntries([]); window.localStorage.setItem("log-anything-entries", "[]"); setOverlay(null); } }}>Clear all logs</button>
         </div>}
