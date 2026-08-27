@@ -1,12 +1,24 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
+const basePath = process.env.GITHUB_PAGES === "true"
+  ? `/${process.env.GITHUB_REPOSITORY?.split("/")[1] || "MemoryDock"}`
+  : "";
+
 export const metadata: Metadata = {
   metadataBase: new URL("https://log-anything.shenedawatson1.chatgpt.site"),
   title: "MemoryDock",
   description: "MemoryDock turns quick voice and text entries into an organized picture of your meals, spending, habits, and life.",
   other: { "codex-preview": "development" },
-  icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
+  manifest: `${basePath}/manifest.webmanifest`,
+  icons: {
+    icon: [
+      { url: `${basePath}/favicon.svg`, type: "image/svg+xml" },
+      { url: `${basePath}/icon-192.png`, sizes: "192x192", type: "image/png" },
+    ],
+    shortcut: `${basePath}/favicon.svg`,
+    apple: [{ url: `${basePath}/apple-touch-icon.png`, sizes: "180x180", type: "image/png" }],
+  },
   applicationName: "MemoryDock",
   appleWebApp: { capable: true, title: "MemoryDock", statusBarStyle: "default" },
   alternates: { canonical: "/" },

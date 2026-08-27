@@ -804,7 +804,7 @@ export default function Home() {
       const { error } = await supabase.from("push_subscriptions").upsert({ user_id: session.user.id, endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth, user_agent: navigator.userAgent, updated_at: new Date().toISOString() }, { onConflict: "endpoint" });
       if (error) throw error;
       setNotificationState("on");
-      await registration.showNotification("MemoryDock notifications are on", { body: "Your reminders can now reach this device.", icon: new URL("favicon.svg", rootUrl).pathname, badge: new URL("favicon.svg", rootUrl).pathname, tag: "memorydock-enabled" });
+      await registration.showNotification("MemoryDock notifications are on", { body: "Your reminders can now reach this device.", icon: new URL("icon-192.png", rootUrl).pathname, badge: new URL("icon-192.png", rootUrl).pathname, tag: "memorydock-enabled" });
     } catch {
       setNotificationState("off");
       setSavedMessage("Notifications could not be enabled. Try again from the installed Home Screen app.");
