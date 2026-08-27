@@ -12,8 +12,8 @@ type SpendCategory = "Groceries" | "Dining" | "Transportation" | "Shopping" | "B
 type Macros = { calories: number; protein: number; carbs: number; fat: number; source: "estimated" | "manual"; items?: string[] };
 type ExpenseInfo = { amount: number; merchant: string; spendCategory: SpendCategory };
 type Entry = { id: string; text: string; category: Category; value?: string; time: string; timestamp: number; macros?: Macros; expense?: ExpenseInfo };
-type Overlay = "search" | "visuals" | "settings" | "profile" | "meals" | "spending" | "edit" | null;
-type PageView = "today" | "timeline" | "visuals" | "meals" | "spending" | "profile" | "settings";
+type Overlay = "search" | "notes" | "visuals" | "settings" | "profile" | "meals" | "spending" | "edit" | null;
+type PageView = "today" | "timeline" | "notes" | "visuals" | "meals" | "spending" | "profile" | "settings";
 type MacroForm = { calories: string; protein: string; carbs: string; fat: string };
 type ExpenseForm = { amount: string; merchant: string; spendCategory: SpendCategory };
 type FoodDefinition = { name: string; aliases: string[]; servingGrams?: number; unit?: "cup" | "item"; calories: number; protein: number; carbs: number; fat: number };
@@ -205,8 +205,8 @@ function sleepInHours(entry: Entry) {
 }
 
 function pageFromPath(pathname: string): PageView {
-  const segment = pathname.split("/").filter(Boolean).find((part) => part === "timeline" || part === "visuals" || part === "meals" || part === "spending" || part === "profile" || part === "settings");
-  if (segment === "timeline" || segment === "visuals" || segment === "meals" || segment === "spending" || segment === "profile" || segment === "settings") return segment;
+  const segment = pathname.split("/").filter(Boolean).find((part) => part === "timeline" || part === "notes" || part === "visuals" || part === "meals" || part === "spending" || part === "profile" || part === "settings");
+  if (segment === "timeline" || segment === "notes" || segment === "visuals" || segment === "meals" || segment === "spending" || segment === "profile" || segment === "settings") return segment;
   return "today";
 }
 
@@ -457,6 +457,8 @@ export default function Home() {
   const [greeting, setGreeting] = useState("Hello");
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [query, setQuery] = useState("");
+  const [notesQuery, setNotesQuery] = useState("");
+  const [notesCategory, setNotesCategory] = useState<Category | "All">("All");
   const [displayName, setDisplayName] = useState("Shay");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileDraft, setProfileDraft] = useState<ProfileDraft>({ name: "Shay", avatarColor: avatarColors[0], focusAreas: [] });
@@ -717,10 +719,16 @@ export default function Home() {
   }, [entries, visualMonthOffset]);
 
   const searchResults = useMemo(() => entries.filter((entry) => `${entry.text} ${entry.category} ${entry.value || ""} ${entry.expense?.merchant || ""} ${entry.expense?.spendCategory || ""} ${entry.macros?.items?.join(" ") || ""}`.toLowerCase().includes(query.toLowerCase())), [entries, query]);
+  const notesCategories = useMemo(() => (Object.keys(categoryMeta) as Category[]).map((category) => ({ category, count: entries.filter((entry) => entry.category === category).length })).filter((item) => item.count > 0).sort((a, b) => b.count - a.count), [entries]);
+  const notesResults = useMemo(() => {
+    const needle = notesQuery.trim().toLowerCase();
+    return entries.filter((entry) => (notesCategory === "All" || entry.category === notesCategory) && (!needle || `${entry.text} ${entry.category} ${entry.value || ""} ${entry.expense?.merchant || ""} ${entry.expense?.spendCategory || ""} ${entry.macros?.items?.join(" ") || ""}`.toLowerCase().includes(needle)));
+  }, [entries, notesCategory, notesQuery]);
+  const groupedNotes = useMemo(() => notesCategories.map(({ category }) => ({ category, entries: notesResults.filter((entry) => entry.category === category) })).filter((group) => group.entries.length > 0), [notesCategories, notesResults]);
   const upcomingReminders = useMemo(() => reminders.filter((reminder) => reminder.status === "pending" && reminder.remindAt > Date.now()).sort((a, b) => a.remindAt - b.remindAt), [reminders]);
   const editingEntry = entries.find((entry) => entry.id === editingEntryId);
   const overlayCopy: Record<Exclude<Overlay, null>, { eyebrow: string; title: string }> = {
-    search: { eyebrow: "Find a moment", title: "Search your logs" }, visuals: { eyebrow: "See the bigger picture", title: "Your month, visualized" },
+    search: { eyebrow: "Find a moment", title: "Search your logs" }, notes: { eyebrow: "Everything, neatly docked", title: "Notes & categories" }, visuals: { eyebrow: "See the bigger picture", title: "Your month, visualized" },
     settings: { eyebrow: "Make it yours", title: "Settings" }, profile: { eyebrow: profile ? "Your MemoryDock" : "Welcome to MemoryDock", title: profile ? "Edit your profile" : "Create your profile" }, meals: { eyebrow: "Today’s nutrition", title: "Meals & macros" },
     spending: { eyebrow: "This month", title: "Spending tracker" }, edit: { eyebrow: "Correct the details", title: "Edit log details" },
   };
@@ -990,6 +998,7 @@ export default function Home() {
       <nav className="side-nav" aria-label="Main navigation">
         <a className={`nav-item ${activePage === "today" ? "active" : ""}`} href={pageHref("today")} onClick={(event) => navigatePage(event, "today")}><Glyph name="home" /><span>Today</span></a>
         <a className={`nav-item ${activePage === "timeline" ? "active" : ""}`} href={pageHref("timeline")} onClick={(event) => navigatePage(event, "timeline")}><Glyph name="timeline" /><span>Timeline</span></a>
+        <a className={`nav-item ${activePage === "notes" ? "active" : ""}`} href={pageHref("notes")} onClick={(event) => navigatePage(event, "notes")}><Glyph name="note" /><span>Notes</span></a>
         <a className={`nav-item ${activePage === "visuals" ? "active" : ""}`} href={pageHref("visuals")} onClick={(event) => navigatePage(event, "visuals")}><Glyph name="chart" /><span>Visuals</span></a>
         <a className={`nav-item ${activePage === "meals" ? "active" : ""}`} href={pageHref("meals")} onClick={(event) => navigatePage(event, "meals")}><Glyph name="fork" /><span>Meals</span></a>
         <a className={`nav-item ${activePage === "spending" ? "active" : ""}`} href={pageHref("spending")} onClick={(event) => navigatePage(event, "spending")}><Glyph name="wallet" /><span>Spending</span></a>
@@ -1066,7 +1075,7 @@ export default function Home() {
     <nav className="mobile-nav" aria-label="Mobile navigation">
       <a className={activePage === "today" ? "active" : ""} href={pageHref("today")} onClick={(event) => navigatePage(event, "today")}><Glyph name="home" /><span>Today</span></a><a className={activePage === "meals" ? "active" : ""} href={pageHref("meals")} onClick={(event) => navigatePage(event, "meals")}><Glyph name="fork" /><span>Meals</span></a>
       <a className={`mobile-visual ${activePage === "visuals" ? "active" : ""}`} href={pageHref("visuals")} onClick={(event) => navigatePage(event, "visuals")} aria-label="Open visual dashboard"><Glyph name="chart" size={22} /><span>Visuals</span></a>
-      <a className={activePage === "spending" ? "active" : ""} href={pageHref("spending")} onClick={(event) => navigatePage(event, "spending")}><Glyph name="wallet" /><span>Spending</span></a><a className={activePage === "profile" ? "active" : ""} href={pageHref("profile")} onClick={(event) => navigatePage(event, "profile")}><Glyph name="user" /><span>Profile</span></a>
+      <a className={activePage === "spending" ? "active" : ""} href={pageHref("spending")} onClick={(event) => navigatePage(event, "spending")}><Glyph name="wallet" /><span>Spending</span></a><a className={activePage === "notes" ? "active" : ""} href={pageHref("notes")} onClick={(event) => navigatePage(event, "notes")}><Glyph name="note" /><span>Notes</span></a>
     </nav>
 
     {panel && <div className={isPagePanel ? "page-layer" : "overlay-layer"} role={isPagePanel ? undefined : "presentation"} onMouseDown={(event) => { if (!isPagePanel && event.target === event.currentTarget) setOverlay(null); }}>
@@ -1081,6 +1090,20 @@ export default function Home() {
           <p className="result-label">{query ? `${searchResults.length} matching ${searchResults.length === 1 ? "log" : "logs"}` : "All logs"}</p>
           <div className="overlay-list">{searchResults.map((entry) => { const meta = categoryMeta[entry.category]; return <article key={entry.id}><span className={`category-icon ${meta.color}`}>{meta.icon === "$" ? <b>$</b> : <Glyph name={meta.icon} size={18} />}</span><span><small>{entry.category} · {entry.time}</small><strong>{entry.text}</strong></span>{entry.value && <em>{entry.value}</em>}</article>; })}</div>
           {searchResults.length === 0 && <div className="mini-empty"><Glyph name="search" size={28} /><p>No matching moments yet.</p></div>}
+        </div>}
+
+        {panel === "notes" && <div className="notes-view">
+          <div className="notes-intro"><p>Every log is automatically sorted into a category. Search a word or tap a category to find it later.</p><strong>{entries.length}<span>saved</span></strong></div>
+          <label className="search-box notes-search"><Glyph name="search" /><input value={notesQuery} onChange={(event) => setNotesQuery(event.target.value)} placeholder="Search your notes…" /></label>
+          <div className="note-category-filters" aria-label="Filter notes by category">
+            <button type="button" className={notesCategory === "All" ? "active" : ""} onClick={() => setNotesCategory("All")}><span className="all-category-icon"><Glyph name="note" size={15} /></span><b>All</b><em>{entries.length}</em></button>
+            {notesCategories.map(({ category, count }) => { const meta = categoryMeta[category]; return <button type="button" className={notesCategory === category ? "active" : ""} key={category} onClick={() => setNotesCategory(category)}><span className={`category-icon ${meta.color}`}>{meta.icon === "$" ? <b>$</b> : <Glyph name={meta.icon} size={15} />}</span><b>{category}</b><em>{count}</em></button>; })}
+          </div>
+          <div className="notes-summary"><span>{notesQuery || notesCategory !== "All" ? `${notesResults.length} found` : "Browse by category"}</span>{(notesQuery || notesCategory !== "All") && <button type="button" onClick={() => { setNotesQuery(""); setNotesCategory("All"); }}>Clear filters</button>}</div>
+          <div className="note-groups">
+            {groupedNotes.map((group) => { const meta = categoryMeta[group.category]; return <section className="note-group" key={group.category}><div className="note-group-head"><span className={`category-icon ${meta.color}`}>{meta.icon === "$" ? <b>$</b> : <Glyph name={meta.icon} size={17} />}</span><div><h3>{group.category}</h3><p>{group.entries.length} {group.entries.length === 1 ? "note" : "notes"}</p></div></div><div className="note-list">{group.entries.map((entry) => <article key={entry.id}><div><small>{entry.time}{entry.value ? ` · ${entry.value}` : ""}</small><p>{entry.text}</p>{entry.expense && <span>{entry.expense.merchant} · {entry.expense.spendCategory}</span>}{entry.macros?.items?.length ? <span>{entry.macros.items.join(" · ")}</span> : null}</div>{(entry.macros || entry.expense) && <button type="button" onClick={() => openEntryEditor(entry)} aria-label={`Edit details for ${entry.text}`}><Glyph name="pencil" size={14} /></button>}</article>)}</div></section>; })}
+          </div>
+          {notesResults.length === 0 && <div className="mini-empty"><Glyph name="note" size={28} /><p>{entries.length ? "No notes match those filters." : "Your saved notes will appear here."}</p></div>}
         </div>}
 
         {panel === "visuals" && <div className="visuals-view">
