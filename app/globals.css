@@ -575,42 +575,55 @@ button.setting-row:hover { background: #f5f3ec; }
   body { background: var(--paper); }
   .app-shell { display: block; background: var(--paper); }
   .sidebar { display: none; }
-  .main-panel { padding: 22px 18px 110px; }
-  .page-layer { padding: 22px 18px 110px; }
+  .main-panel { padding: 26px 20px 126px; }
+  .page-layer { padding: 26px 20px 126px; }
   .page-panel { max-width: none; }
   .page-panel .overlay-head { margin-bottom: 20px; }
   .topbar { align-items: center; margin-bottom: 23px; }
-  .topbar .eyebrow { font-size: 8px; }
-  .topbar h1 { font-size: 25px; }
+  .topbar .eyebrow { margin-bottom: 9px; font-size: 12px; }
+  .topbar h1 { font-size: 32px; line-height: 1.08; }
+  .sync-pill { min-height: 36px; padding: 0 12px; font-size: 11px; }
   .icon-button { display: none; }
-  .mobile-mark { display: grid; width: 42px; height: 42px; border: 1px solid var(--line); background: #faf8f1; border-radius: 13px; place-items: center; }
+  .mobile-mark { display: grid; width: 48px; height: 48px; border: 1px solid var(--line); background: #faf8f1; border-radius: 14px; place-items: center; }
   .mobile-mark .dock-mark { margin: auto; }
   .capture-card { box-shadow: 0 12px 34px rgba(48,54,41,.08); border-radius: 19px; }
-  .capture-heading { padding: 16px 17px 0; font-size: 10px; }
-  .capture-card form { padding: 0 17px 16px; }
-  .capture-card textarea { min-height: 112px; font-size: 20px; padding: 11px 0; }
+  .capture-heading { padding: 19px 19px 0; font-size: 13px; }
+  .capture-card form { padding: 0 19px 19px; }
+  .capture-card textarea { min-height: 140px; font-size: 24px; line-height: 1.35; padding: 16px 0; }
   .capture-footer { align-items: flex-end; }
-  .capture-hint { max-width: 100px; line-height: 1.35; }
-  .mic-button, .save-button { width: 42px; height: 42px; padding: 0; justify-content: center; border-radius: 50%; }
+  .capture-hint { max-width: 150px; font-size: 12px; line-height: 1.35; }
+  .mic-button, .save-button { width: 52px; height: 52px; padding: 0; justify-content: center; border-radius: 50%; }
   .mic-button span, .save-button span { display: none; }
-  .save-button svg { width: 21px; height: 21px; }
-  .prompt-row { margin-right: -18px; padding-right: 18px; }
+  .mic-button svg, .save-button svg { width: 24px; height: 24px; }
+  .prompt-row { margin-right: -20px; padding: 16px 20px 4px 2px; }
+  .prompt-row button { padding: 10px 14px; font-size: 12px; }
   .timeline-section { padding-top: 30px; }
+  .timeline-section .eyebrow { font-size: 11px; }
+  .section-heading h2 { font-size: 31px; }
+  .entry-count { font-size: 12px; }
   .entry-card { grid-template-columns: 39px minmax(0,1fr) auto; padding: 13px 12px; gap: 11px; }
   .category-icon { width: 37px; height: 37px; }
   .entry-value { font-size: 12px; }
+  .entry-meta time, .category-pill { font-size: 11px; }
+  .entry-copy p { font-size: 15px; }
+  .spend-detail, .macro-strip { font-size: 11px; }
   .entry-side { align-self: start; }
   .entry-edit { display: none; }
   .macro-strip { gap: 5px; flex-wrap: wrap; }
   .entry-delete { opacity: 1; top: auto; bottom: 3px; right: 3px; transform: scale(.8); }
-  .mobile-nav { position: fixed; z-index: 20; display: grid; grid-template-columns: repeat(5, 1fr); align-items: end; left: 10px; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); height: 68px; padding: 9px 10px 7px; border: 1px solid rgba(56,79,64,.1); border-radius: 22px; background: rgba(255,254,250,.94); box-shadow: 0 12px 40px rgba(34,48,39,.18); backdrop-filter: blur(16px); }
-  .mobile-nav a, .mobile-nav button { height: 45px; border: 0; background: transparent; color: #89938d; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 8px; }
+  .mobile-nav { position: fixed; z-index: 20; display: grid; grid-template-columns: repeat(5, 1fr); align-items: end; left: 10px; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); height: 80px; padding: 11px 10px 9px; border: 1px solid rgba(56,79,64,.1); border-radius: 24px; background: rgba(255,254,250,.94); box-shadow: 0 12px 40px rgba(34,48,39,.18); backdrop-filter: blur(16px); }
+  .mobile-nav a, .mobile-nav button { height: 54px; border: 0; background: transparent; color: #89938d; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; font-size: 11px; }
+  .mobile-nav a > svg, .mobile-nav button > svg { width: 23px; height: 23px; }
   .mobile-nav .active { color: var(--green); }
-  .mobile-nav .mobile-visual { justify-self: center; align-self: center; width: 57px; height: 57px; margin-top: -22px; border-radius: 50%; background: var(--green); color: white; box-shadow: 0 8px 19px rgba(49,94,71,.28); }
-  .mobile-nav .mobile-visual span { font-size: 7px; font-weight: 800; }
+  .mobile-nav .mobile-visual { justify-self: center; align-self: center; width: 66px; height: 66px; margin-top: -25px; border-radius: 50%; background: var(--green); color: white; box-shadow: 0 8px 19px rgba(49,94,71,.28); }
+  .mobile-nav .mobile-visual span { font-size: 10px; font-weight: 800; }
   .overlay-layer { padding: 0; place-items: end center; }
   .overlay-panel { width: 100%; max-height: 88vh; border-radius: 25px 25px 0 0; border-bottom: 0; padding: 22px 18px max(24px, env(safe-area-inset-bottom)); }
-  .overlay-head h2 { font-size: 25px; }
+  .overlay-head h2, .page-panel .overlay-head h2 { font-size: 31px; }
+  .search-box input { font-size: 16px; }
+  .empty-state { padding: 52px 24px; }
+  .empty-state h3 { font-size: 24px; }
+  .empty-state p { font-size: 14px; line-height: 1.5; }
   .visual-toolbar { min-height: 61px; }
   .visual-toolbar strong { font-size: 17px; }
   .visual-tabs { display: flex; overflow-x: auto; margin-right: -18px; padding-right: 18px; scrollbar-width: none; }
