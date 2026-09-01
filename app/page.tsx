@@ -447,7 +447,7 @@ export default function Home() {
   const [authMessage, setAuthMessage] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [syncState, setSyncState] = useState<SyncState>(isCloudSyncConfigured ? "loading" : "local");
-  const [cloudHydrated, setCloudHydrated] = useState(!isCloudSyncConfigured);
+  const [, setCloudHydrated] = useState(!isCloudSyncConfigured);
   const [draft, setDraft] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
@@ -526,9 +526,15 @@ export default function Home() {
     const supabase = getSupabase();
     if (!supabase) return;
     let active = true;
+    const authFallback = window.setTimeout(() => {
+      if (!active) return;
+      setAuthReady(true);
+      setSyncState("error");
+    }, 5000);
 
     const applySession = (nextSession: Session | null) => {
       if (!active) return;
+      window.clearTimeout(authFallback);
       const previousUserId = sessionUserIdRef.current;
       const nextUserId = nextSession?.user.id || null;
       sessionUserIdRef.current = nextUserId;
@@ -553,7 +559,7 @@ export default function Home() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       applySession(nextSession);
     });
-    return () => { active = false; listener.subscription.unsubscribe(); };
+    return () => { active = false; window.clearTimeout(authFallback); listener.subscription.unsubscribe(); };
   }, []);
 
   useEffect(() => {
@@ -1008,7 +1014,7 @@ export default function Home() {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }
 
-  if (isCloudSyncConfigured && (!authReady || (session && !cloudHydrated))) {
+  if (isCloudSyncConfigured && !authReady) {
     return <main className="auth-shell"><section className="auth-card auth-loading"><DockMark /><h1>Opening your MemoryDock…</h1><p>Loading your private account and saved data.</p></section></main>;
   }
 
