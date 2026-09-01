@@ -472,6 +472,7 @@ export default function Home() {
   const [macroForm, setMacroForm] = useState<MacroForm>({ calories: "", protein: "", carbs: "", fat: "" });
   const [expenseForm, setExpenseForm] = useState<ExpenseForm>({ amount: "", merchant: "", spendCategory: "Other" });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const sessionUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const syncPageFromAddress = () => setActivePage(pageFromPath(window.location.pathname));
@@ -525,19 +526,32 @@ export default function Home() {
     const supabase = getSupabase();
     if (!supabase) return;
     let active = true;
-    void supabase.auth.getSession().then(({ data }) => {
+
+    const applySession = (nextSession: Session | null) => {
       if (!active) return;
-      setSession(data.session);
-      setAuthReady(true);
-      setSyncState(data.session ? "loading" : "local");
-      setCloudHydrated(!data.session);
-    });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      if (!active) return;
+      const previousUserId = sessionUserIdRef.current;
+      const nextUserId = nextSession?.user.id || null;
+      sessionUserIdRef.current = nextUserId;
       setSession(nextSession);
       setAuthReady(true);
-      setSyncState(nextSession ? "loading" : "local");
-      setCloudHydrated(!nextSession);
+
+      // Supabase refreshes tokens when an installed iOS app resumes. A refresh
+      // for the same person must not put the whole app back into its cold-start
+      // loading screen; cloud hydration only reruns when the user actually changes.
+      if (previousUserId !== nextUserId) {
+        setSyncState(nextSession ? "loading" : "local");
+        setCloudHydrated(!nextSession);
+      } else if (!nextSession) {
+        setSyncState("local");
+        setCloudHydrated(true);
+      }
+    };
+
+    void supabase.auth.getSession().then(({ data }) => {
+      applySession(data.session);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      applySession(nextSession);
     });
     return () => { active = false; listener.subscription.unsubscribe(); };
   }, []);
@@ -547,36 +561,41 @@ export default function Home() {
     if (!supabase || !session || !localReady) return;
     let active = true;
     const userId = session.user.id;
+    const hydrationFallback = window.setTimeout(() => {
+      if (!active) return;
+      setSyncState("error");
+      setCloudHydrated(true);
+    }, 12000);
 
     async function hydrateCloud() {
-      setSyncState("loading");
-      const [{ data: remoteEntries, error: entriesError }, { data: remoteProfile, error: profileLoadError }, { data: remoteReminders, error: remindersError }] = await Promise.all([
-        supabase!.from("entries").select("id,text,category,value,event_time,macros,expense").order("event_time", { ascending: false }),
-        supabase!.from("profiles").select("display_name,avatar_data_url,avatar_color,focus_areas,macro_goals,spend_budget,theme,created_at").maybeSingle(),
-        supabase!.from("reminders").select("id,text,remind_at,status,created_at").order("remind_at", { ascending: true }),
-      ]);
-      if (!active) return;
-      if (entriesError || profileLoadError || remindersError) {
-        setSyncState("error");
-        setCloudHydrated(true);
-        return;
-      }
-
-      let nextEntries = (remoteEntries as EntryRow[] | null)?.map(rowToEntry) || [];
-      if (!nextEntries.length) {
-        const stored = window.localStorage.getItem("log-anything-entries");
-        let localEntries: Entry[] = [];
-        if (stored) { try { localEntries = (JSON.parse(stored) as Entry[]).filter((entry) => !entry.id.startsWith("sample-")); } catch { /* skip invalid local data */ } }
-        if (localEntries.length) {
-          const { error } = await supabase!.from("entries").upsert(localEntries.map((entry) => entryToRow(enrichEntry(entry), userId)));
-          if (!error) nextEntries = localEntries.map((entry) => enrichEntry(entry));
+      try {
+        setSyncState("loading");
+        const [{ data: remoteEntries, error: entriesError }, { data: remoteProfile, error: profileLoadError }, { data: remoteReminders, error: remindersError }] = await Promise.all([
+          supabase!.from("entries").select("id,text,category,value,event_time,macros,expense").order("event_time", { ascending: false }),
+          supabase!.from("profiles").select("display_name,avatar_data_url,avatar_color,focus_areas,macro_goals,spend_budget,theme,created_at").maybeSingle(),
+          supabase!.from("reminders").select("id,text,remind_at,status,created_at").order("remind_at", { ascending: true }),
+        ]);
+        if (!active) return;
+        if (entriesError || profileLoadError || remindersError) {
+          setSyncState("error");
+          return;
         }
-      }
-      setEntries(nextEntries);
-      window.localStorage.setItem("log-anything-entries", JSON.stringify(nextEntries));
-      setReminders(((remoteReminders as ReminderRow[] | null) || []).map(rowToReminder));
 
-      if (remoteProfile) {
+        let nextEntries = (remoteEntries as EntryRow[] | null)?.map(rowToEntry) || [];
+        if (!nextEntries.length) {
+          const stored = window.localStorage.getItem("log-anything-entries");
+          let localEntries: Entry[] = [];
+          if (stored) { try { localEntries = (JSON.parse(stored) as Entry[]).filter((entry) => !entry.id.startsWith("sample-")); } catch { /* skip invalid local data */ } }
+          if (localEntries.length) {
+            const { error } = await supabase!.from("entries").upsert(localEntries.map((entry) => entryToRow(enrichEntry(entry), userId)));
+            if (!error) nextEntries = localEntries.map((entry) => enrichEntry(entry));
+          }
+        }
+        setEntries(nextEntries);
+        window.localStorage.setItem("log-anything-entries", JSON.stringify(nextEntries));
+        setReminders(((remoteReminders as ReminderRow[] | null) || []).map(rowToReminder));
+
+        if (remoteProfile) {
         const row = remoteProfile as ProfileRow;
         const nextProfile: Profile = {
           name: row.display_name || session!.user.email?.split("@")[0] || "You",
@@ -591,7 +610,7 @@ export default function Home() {
         setMacroGoals(row.macro_goals || { calories: 2000, protein: 100, carbs: 250, fat: 65 });
         setSpendBudget(Number(row.spend_budget) || 0);
         setTheme(row.theme === "night" ? "night" : "day");
-      } else {
+        } else {
         const storedProfile = window.localStorage.getItem("memorydock-profile-v1");
         let localProfile: Profile | null = null;
         if (storedProfile) { try { localProfile = JSON.parse(storedProfile) as Profile; } catch { /* use email fallback */ } }
@@ -613,13 +632,18 @@ export default function Home() {
           setProfileDraft({ name: nextProfile.name, avatarDataUrl: nextProfile.avatarDataUrl, avatarColor: nextProfile.avatarColor, focusAreas: nextProfile.focusAreas });
           setDisplayName(nextProfile.name);
         }
+        }
+        setSyncState("saved");
+      } catch {
+        if (active) setSyncState("error");
+      } finally {
+        window.clearTimeout(hydrationFallback);
+        if (active) setCloudHydrated(true);
       }
-      setSyncState("saved");
-      setCloudHydrated(true);
     }
 
     void hydrateCloud();
-    return () => { active = false; };
+    return () => { active = false; window.clearTimeout(hydrationFallback); };
     // Cloud hydration runs once per authenticated person after local hydration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localReady, session?.user.id]);
@@ -954,7 +978,7 @@ export default function Home() {
     const supabase = getSupabase();
     if (!supabase) return;
     await supabase.auth.signOut();
-    setEntries([]); setReminders([]); setProfile(null); setDisplayName("Shay"); setCloudHydrated(false);
+    setEntries([]); setReminders([]); setProfile(null); setDisplayName("Shay"); setCloudHydrated(true);
   }
 
   function clearAllLogs() {
